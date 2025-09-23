@@ -1,0 +1,51 @@
+# Docker ignore file for EasyOps
+# Ignore build outputs
+bin/
+obj/
+out/
+
+# Ignore Visual Studio files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Ignore Node.js modules (if any)
+node_modules/
+npm-debug.log*
+
+# Ignore logs
+logs/
+*.log
+
+# Ignore temporary files
+*.tmp
+*.temp
+
+# Ignore OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Ignore Git
+.git/
+.gitignore
+
+# Ignore IDE files
+.vscode/
+.idea/
+
+# Ignore Docker files (we'll copy them separately if needed)
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Ignore sensitive configuration files (will be mounted as volumes)
+appsettings.*.json
+!appsettings.json
+!appsettings.Docker.json

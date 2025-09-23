@@ -1,0 +1,150 @@
+@page
+@model AwsModel
+@{
+    ViewData["Title"] = "AWS Operations";
+}
+
+<div class="container-fluid">
+    <h2>☁️ AWS Operations</h2>
+    
+    <!-- AWS Authentication Status Bar -->
+    <div id="awsAuthStatusBar" class="alert alert-warning mb-3">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <span id="awsAuthStatusMessage">⚠️ Checking AWS credentials...</span>
+                <div id="awsCurrentUserInfo" style="display: none;">
+                    <small>
+                        <strong>Account:</strong> <span id="awsAccountId"></span> | 
+                        <strong>Region:</strong> <span id="awsRegion"></span> | 
+                        <strong>Environment:</strong> <span id="awsEnvironmentName" class="badge bg-primary"></span> |
+                        <strong>Expires:</strong> <span id="awsExpiresAt"></span>
+                    </small>
+                </div>
+            </div>
+            <div>
+                <button class="btn btn-warning btn-sm me-2" onclick="refreshAwsCredentials()" id="awsRefreshBtn">🔄 Refresh SAML2AWS</button>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" id="awsEnvironmentDropdownBtn">
+                        🌍 <span id="awsCurrentEnvironmentText">Environment</span>
+                    </button>
+                    <ul class="dropdown-menu" id="awsEnvironmentDropdown">
+                        <!-- Environment options will be populated by JavaScript -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AWS Operations Card -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-info">
+                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">☁️ AWS ECS Operations</h5>
+                    <button type="button" class="btn btn-light btn-sm" onclick="resetAwsView()" id="awsResetBtn" style="display: none;">
+                        🔄 Reset
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">ECS Cluster:</label>
+                                <select class="form-select" id="awsClusterSelect" onchange="onAwsClusterChange()">
+                                    <option value="">Loading clusters...</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Actions:</label>
+                                <div class="btn-group w-100" role="group">
+                                    <button type="button" class="btn btn-outline-primary" onclick="loadClusterServices()" id="loadServicesBtn" disabled>
+                                        📋 Load Services
+                                    </button>
+                                    <button type="button" class="btn btn-outline-success" onclick="refreshClusterServices()" id="refreshServicesBtn" disabled style="display: none;">
+                                        🔄 Refresh Services
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div class="bg-light p-3 rounded">
+                                <h6 class="fw-bold">📊 Quick Info</h6>
+                                <div id="awsQuickInfo">
+                                    <div class="text-muted">Select a cluster to view ECS services</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="awsLoadingCard" class="card mb-4" style="display: none;">
+        <div class="card-body text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <div class="mt-2" id="awsLoadingMessage">Loading AWS ECS services...</div>
+        </div>
+    </div>
+
+    <!-- Services Results Card -->
+    <div id="awsServicesCard" class="card mb-4" style="display: none;">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">📦 ECS Services</h5>
+            <div>
+                <span class="badge bg-primary" id="servicesCount">0 services</span>
+                <button class="btn btn-sm btn-outline-secondary ms-2" onclick="exportServicesData()">
+                    📤 Export
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Service Name</th>
+                            <th>Status</th>
+                            <th>Version</th>
+                            <th>CPU</th>
+                            <th>Memory</th>
+                            <th>Running/Desired</th>
+                            <th>Last Updated</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="servicesTableBody">
+                        <!-- Services will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Service Details Modal -->
+    <div class="modal fade" id="serviceDetailsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">📦 Service Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="serviceDetailsContent">
+                        <!-- Service details will be populated here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="~/js/aws.js"></script>

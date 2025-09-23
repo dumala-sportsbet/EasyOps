@@ -1,0 +1,260 @@
+@page
+@model JenkinsModel
+@{
+    ViewData["Title"] = "Jenkins Pipeline Operations";
+}
+
+<div class="container-fluid">
+    <h2>🚀 Jenkins Pipeline Operations</h2>
+    
+    <!-- Authentication Status Bar -->
+    <div id="authStatusBar" class="alert alert-warning mb-3" style="display: none;">
+        <div class="d-flex justify-content-between align-items-center">
+            <span id="authStatusMessage">⚠️ Not authenticated. Please log in to use Jenkins operations.</span>
+            <div>
+                <span id="currentUserInfo" style="display: none;">👤 Logged in as: <strong id="currentUsername"></strong></span>
+                <button class="btn btn-success btn-sm me-2" onclick="showLoginModal()" id="loginBtn">🔑 Login</button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="logout()" id="logoutBtn" style="display: none;">🚪 Logout</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Authentication Modal -->
+    <div class="modal fade" id="authModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">🔑 Jenkins Authentication</h5>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <strong>ℹ️ Authentication Required</strong><br>
+                        Please enter your Jenkins credentials to access pipeline operations.
+                    </div>
+                    <form id="authForm">
+                        <div class="mb-3">
+                            <label for="jenkinsUsername" class="form-label">Jenkins Username</label>
+                            <input type="text" class="form-control" id="jenkinsUsername" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="jenkinsApiToken" class="form-label">Jenkins API Token</label>
+                            <input type="password" class="form-control" id="jenkinsApiToken" required>
+                            <div class="form-text">
+                                <a href="https://jenkins.int.ts.dev.sbet.cloud/user/your-username/configure" target="_blank">
+                                    📖 How to generate an API Token in Jenkins
+                                </a>
+                            </div>
+                        </div>
+                        <div id="authError" class="alert alert-danger" style="display: none;"></div>
+                        <div id="authLoading" class="text-center" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Authenticating...</span>
+                            </div>
+                            <div class="mt-2">Verifying credentials...</div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="authenticateUser()" id="loginSubmitBtn">
+                        🔑 Login
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Actions Card -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-primary">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">🚀 Jenkins Pipeline Operations</h5>
+                    <button type="button" class="btn btn-light btn-sm" onclick="resetToFreshState()" id="resetBtn" style="display: none;">
+                        🔄 Reset
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Monorepo:</label>
+                                <select class="form-select" id="monorepoSelect" onchange="onMonorepoChange()">
+                                    <option value="">Loading monorepos...</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Branch Selection:</label>
+                                <div class="border rounded p-3 bg-light">
+                                    <div class="row align-items-center">
+                                        <div class="col-md-6">
+                                            <small class="text-muted d-block mb-2">Quick Select:</small>
+                                            <div class="btn-group w-100" role="group">
+                                                <button type="button" class="btn btn-outline-primary" onclick="setBranch('main')" id="mainBtn">
+                                                    🌟 main
+                                                </button>
+                                                <button type="button" class="btn btn-outline-primary active" onclick="setBranch('develop')" id="developBtn">
+                                                    🚀 develop
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <small class="text-muted d-block mb-2">Custom Branch:</small>
+                                            <div class="input-group">
+                                                <span class="input-group-text">🌿</span>
+                                                <input type="text" class="form-control" id="branchInput" value="develop" 
+                                                       placeholder="Enter custom branch name" 
+                                                       onchange="updateBranchFromInput()"
+                                                       title="Enter any branch name - your input will be preserved">
+                                            </div>
+                                            <small class="text-info">💡 Your custom branch name will be preserved</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid gap-2">
+                                <button type="button" class="btn btn-info btn-lg" onclick="quickCheckVersionsAll()">
+                                    📋 Check Versions - All Projects
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" onclick="showProjectSelector()">
+                                    📝 Select Specific Projects
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Action Selection Section (Hidden initially) -->
+                        <div class="col-md-4" id="actionSection" style="display: none;">
+                            <div class="card border-success h-100">
+                                <div class="card-body text-center">
+                                    <h6 class="card-title text-success">Choose Action</h6>
+                                    <p class="text-muted small mb-3" id="actionInfo">0 projects ready</p>
+                                    <div class="d-grid gap-2">
+                                        <button type="button" class="btn btn-success" onclick="selectAction('build')" id="buildActionBtn">
+                                            🔨 Build
+                                        </button>
+                                        <button type="button" class="btn btn-warning" onclick="selectAction('deploy')" id="deployActionBtn">
+                                            🚀 Deploy
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deploy Options Card (Hidden initially) -->
+    <div class="row mb-4" id="deployOptionsCard" style="display: none;">
+        <div class="col-12">
+            <div class="card border-warning">
+                <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">🚀 Deploy Configuration</h5>
+                    <button type="button" class="btn btn-sm btn-outline-dark" onclick="goBackToActionSelection()" title="Go back to action selection">
+                        ← Back to Actions
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Environment Selection:</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="deployToDev" name="deployEnv" value="DEV">
+                                    <label class="form-check-label" for="deployToDev">
+                                        🔧 Deploy to DEV
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="deployToStg" name="deployEnv" value="STG">
+                                    <label class="form-check-label" for="deployToStg">
+                                        🧪 Deploy to STAGING
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="deployToPrd" name="deployEnv" value="PRD" onchange="toggleChangeDescription()">
+                                    <label class="form-check-label" for="deployToPrd">
+                                        🔴 Deploy to PRODUCTION
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Change Description:</label>
+                                <textarea class="form-control" id="changeDescription" rows="4" placeholder="Describe the changes being deployed..." style="display: none;"></textarea>
+                                <small class="text-muted" id="changeDescHint" style="display: none;">Required for Production deployments</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Section -->
+    <div class="card mb-3" id="resultsCard" style="display: none;">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 id="resultsTitle" class="mb-0">Results</h5>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="goBackToActionSelection()" title="Go back to action selection">
+                ← Back to Actions
+            </button>
+        </div>
+        <div class="card-body">
+            <div id="resultsContent"></div>
+        </div>
+    </div>
+
+    <!-- Advanced Project Selector (Hidden by default) -->
+    <div class="card mb-3" id="projectSelectorCard" style="display: none;">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Advanced Project Selection</h5>
+            <button type="button" class="btn-close" onclick="hideProjectSelector()"></button>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <label for="projectDropdown" class="form-label">Available Projects:</label>
+                    <select class="form-select" id="projectDropdown" size="10">
+                        <option value="">Loading projects...</option>
+                    </select>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-primary btn-sm" onclick="addProject()">Add Selected →</button>
+                        <button type="button" class="btn btn-success btn-sm" onclick="selectAllProjects()">Add All →</button>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Selected Projects:</label>
+                    <div id="selectedProjects" class="border rounded p-2" style="min-height: 200px;">
+                        <em class="text-muted">No projects selected</em>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Branch for Selected Projects:</label>
+                    <div class="border rounded p-2 bg-light">
+                        <div class="input-group mb-2">
+                            <span class="input-group-text">🌿</span>
+                            <input type="text" class="form-control" id="advancedBranchInput" value="develop" 
+                                   placeholder="Branch name for selected projects" 
+                                   onchange="updateMainBranchFromAdvanced()"
+                                   title="This branch will be used for the selected projects">
+                        </div>
+                        <small class="text-info">💡 Syncs with main branch selection above</small>
+                    </div>
+                    <div class="d-grid mt-3">
+                        <button type="button" class="btn btn-primary" onclick="getVersionsForSelected()" id="advancedGetVersionsBtn">
+                            📋 Check Selected Versions
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/jenkins-utils.js"></script>
+    <script src="~/js/jenkins.js"></script>
+}
