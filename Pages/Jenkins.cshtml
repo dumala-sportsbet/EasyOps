@@ -6,7 +6,7 @@
 
 <div class="container-fluid">
     <h2>🚀 Jenkins Pipeline Operations</h2>
-    
+
     <!-- Authentication Status Bar -->
     <div id="authStatusBar" class="alert alert-warning mb-3" style="display: none;">
         <div class="d-flex justify-content-between align-items-center">
@@ -162,13 +162,13 @@
                             <div class="mb-3">
                                 <label class="form-label fw-bold">Environment Selection:</label>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="deployToDev" name="deployEnv" value="DEV">
+                                    <input class="form-check-input" type="checkbox" id="deployToDev" name="deployEnv" value="DEV" onchange="toggleChangeDescription()">
                                     <label class="form-check-label" for="deployToDev">
                                         🔧 Deploy to DEV
                                     </label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="deployToStg" name="deployEnv" value="STG">
+                                    <input class="form-check-input" type="checkbox" id="deployToStg" name="deployEnv" value="STG" onchange="toggleChangeDescription()">
                                     <label class="form-check-label" for="deployToStg">
                                         🧪 Deploy to STAGING
                                     </label>
@@ -185,7 +185,7 @@
                             <div class="mb-3">
                                 <label class="form-label fw-bold">Change Description:</label>
                                 <textarea class="form-control" id="changeDescription" rows="4" placeholder="Describe the changes being deployed..." style="display: none;"></textarea>
-                                <small class="text-muted" id="changeDescHint" style="display: none;">Required for Production deployments</small>
+                                <small class="text-muted" id="changeDescHint" style="display: none;">Please describe the changes being deployed</small>
                             </div>
                         </div>
                     </div>

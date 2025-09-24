@@ -844,14 +844,30 @@ function showDeployOptions() {
 }
 
 function toggleChangeDescription() {
+    // Safety check: only run if deploy options card is visible
+    const deployOptionsCard = document.getElementById('deployOptionsCard');
+    if (!deployOptionsCard || deployOptionsCard.style.display === 'none') {
+        return;
+    }
+    
+    const isDevSelected = document.getElementById('deployToDev').checked;
+    const isStgSelected = document.getElementById('deployToStg').checked;
     const isProdSelected = document.getElementById('deployToPrd').checked;
     const changeDesc = document.getElementById('changeDescription');
     const hint = document.getElementById('changeDescHint');
     
-    if (isProdSelected) {
+    // Show change description if any environment is selected
+    const anyEnvironmentSelected = isDevSelected || isStgSelected || isProdSelected;
+    
+    if (anyEnvironmentSelected) {
         changeDesc.style.display = 'block';
         hint.style.display = 'block';
-        changeDesc.setAttribute('required', 'true');
+        // Make it required for production, optional for others
+        if (isProdSelected) {
+            changeDesc.setAttribute('required', 'true');
+        } else {
+            changeDesc.removeAttribute('required');
+        }
     } else {
         changeDesc.style.display = 'none';
         hint.style.display = 'none';
