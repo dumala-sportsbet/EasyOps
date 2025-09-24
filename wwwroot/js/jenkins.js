@@ -1157,11 +1157,10 @@ function displayExecutionResults(container, results) {
         const actionText = currentMode === 'build' ? 'BUILD' : 'DEPLOY';
         html += `<div class="alert alert-success"><h6>✅ ${actionText} Jobs Executed Successfully:</h6>`;
         html += '<div class="table-responsive"><table class="table table-sm mb-0">';
-        html += '<thead><tr><th>Project</th><th>Branch</th><th>Job Type</th><th>Previous Version</th><th>Current Version</th><th>Triggered Build</th><th>Status</th><th>Job URL</th><th>Actions</th></tr></thead><tbody>';
+        html += '<thead><tr><th>Project</th><th>Branch</th><th>Job Type</th><th>Previous Version</th><th>Current Version</th><th>Status</th><th>Job URL</th><th>Actions</th></tr></thead><tbody>';
         
         successResults.forEach(result => {
             const triggeredBuild = triggeredBuilds.get(result.project);
-            const buildNumber = triggeredBuild ? `#${triggeredBuild.buildNumber}` : 'Unknown';
             
             // Get version information for this project - separate previous and current versions
             const projectVersion = lastBuildResults.find(r => r.project === result.project);
@@ -1187,7 +1186,6 @@ function displayExecutionResults(container, results) {
                 <td><span class="badge bg-primary">${result.jobType.toUpperCase()}</span></td>
                 <td>${previousVersionDisplay}</td>
                 <td>${currentVersionDisplay}</td>
-                <td><span class="badge bg-info">${buildNumber}</span></td>
                 <td><span class="badge bg-warning">IN PROGRESS</span></td>
                 <td><a href="${result.jobUrl || '#'}" target="_blank" class="btn btn-sm btn-outline-primary">View Job</a></td>
                 <td><span class="retry-button-placeholder-${result.project.replace(/[^a-zA-Z0-9]/g, '_')}"></span></td>
@@ -1969,8 +1967,8 @@ function updateExecutionStatusDisplay(statusResults) {
         if (projectRow) {
             const previousVersionCell = projectRow.querySelector('td:nth-child(4) .badge');
             const currentVersionCell = projectRow.querySelector('td:nth-child(5) .badge');
-            const statusCell = projectRow.querySelector('td:nth-child(7) .badge');
-            const actionsCell = projectRow.querySelector('td:nth-child(9)');
+            const statusCell = projectRow.querySelector('td:nth-child(6) .badge');
+            const actionsCell = projectRow.querySelector('td:nth-child(8)');
             
             // Enhanced debug logging to see exactly what we're getting
             console.log(`Updating version for ${result.project}:`, JSON.stringify({
@@ -2054,12 +2052,16 @@ function updateExecutionStatusDisplay(statusResults) {
                         statusCell.textContent = result.status;
                     }
                     
-                    // Show retry button for failed deploy jobs
-                    if (actionsCell && result.jobType === 'deploy') {
+                    // Show retry button for failed build and deploy jobs
+                    if (actionsCell) {
                         const branch = projectRow.querySelector('td:nth-child(2) .badge').textContent;
-                        actionsCell.innerHTML = `<button type="button" class="btn btn-sm btn-outline-danger" onclick="retryDeployJob('${result.project}', '${branch}', '${result.jobType}')" title="Retry failed deploy">🔄 Retry</button>`;
-                    } else if (actionsCell) {
-                        actionsCell.innerHTML = '<span class="text-danger">✗</span>';
+                        if (result.jobType === 'deploy') {
+                            actionsCell.innerHTML = `<button type="button" class="btn btn-sm btn-outline-danger" onclick="retryDeployJob('${result.project}', '${branch}', '${result.jobType}')" title="Retry failed deploy">🔄 Retry</button>`;
+                        } else if (result.jobType === 'build') {
+                            actionsCell.innerHTML = `<button type="button" class="btn btn-sm btn-outline-danger" onclick="retryBuildJob('${result.project}', '${branch}', '${result.jobType}')" title="Retry failed build">🔄 Retry</button>`;
+                        } else {
+                            actionsCell.innerHTML = '<span class="text-danger">✗</span>';
+                        }
                     }
                 } else {
                     statusCell.className = 'badge bg-secondary';
@@ -2071,6 +2073,79 @@ function updateExecutionStatusDisplay(statusResults) {
             }
         }
     });
+}
+
+// Retry a failed build job
+async function retryBuildJob(projectName, branch, jobType) {
+    try {
+        // Show loading state
+        const retryButton = document.querySelector(`[onclick="retryBuildJob('${projectName}', '${branch}', '${jobType}')"]`);
+        if (retryButton) {
+            retryButton.disabled = true;
+            retryButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Retrying...';
+        }
+
+        // Get current monorepo from dropdown
+        const monorepoDropdown = document.getElementById('monorepoSelect');
+        const monorepo = monorepoDropdown ? monorepoDropdown.value : '';
+
+        if (!monorepo) {
+            throw new Error('Please select a monorepo first');
+        }
+
+        // Execute the build job again
+        const result = await executeJobWithoutParameters(projectName, branch, jobType, monorepo);
+        
+        // Update the UI immediately to show the new build is in progress
+        if (result && result.nextBuildNumber) {
+            // Find the project row and update all relevant cells
+            const projectRows = document.querySelectorAll('#resultsTableBody tr');
+            projectRows.forEach(row => {
+                const projectCell = row.querySelector('td:first-child');
+                if (projectCell && projectCell.textContent.trim() === projectName) {
+                    // Update current version to show "Building..." (column 5)
+                    const currentVersionCell = row.querySelector('td:nth-child(5)');
+                    if (currentVersionCell) {
+                        currentVersionCell.innerHTML = '<span class="badge bg-warning"><strong>Building...</strong></span>';
+                    }
+                    
+                    // Update status to show "IN PROGRESS" (column 6)
+                    const statusCell = row.querySelector('td:nth-child(6)');
+                    if (statusCell) {
+                        statusCell.innerHTML = '<span class="badge bg-warning">IN PROGRESS</span>';
+                    }
+                    
+                    // Update actions cell to show "Running..." (column 8)
+                    const actionsCell = row.querySelector('td:nth-child(8)');
+                    if (actionsCell) {
+                        actionsCell.innerHTML = '<span class="text-muted">Running...</span>';
+                    }
+                }
+            });
+        }
+        
+        // Start auto-refresh monitoring for the new build
+        startAutoRefreshForExecution();
+        
+        // Show success message
+        showToast('Build retry initiated successfully!', 'success');
+        
+        // Reset button state
+        if (retryButton) {
+            retryButton.disabled = false;
+            retryButton.innerHTML = '🔄 Retry';
+        }
+
+    } catch (error) {
+        console.error('Error retrying build job:', error);
+        showToast(`Failed to retry build: ${error.message}`, 'error');
+        
+        // Reset button state
+        if (retryButton) {
+            retryButton.disabled = false;
+            retryButton.innerHTML = '🔄 Retry';
+        }
+    }
 }
 
 // Retry a failed deploy job
@@ -2092,10 +2167,41 @@ async function retryDeployJob(projectName, branch, jobType) {
         }
 
         // Execute the deploy job again (skip parameter checking since it's a deploy)
-        await executeJobWithoutParameters(projectName, branch, jobType, monorepo);
+        const result = await executeJobWithoutParameters(projectName, branch, jobType, monorepo);
+        
+        // Update the UI immediately to show the new deploy is in progress
+        if (result && result.nextBuildNumber) {
+            // Find the project row and update all relevant cells
+            const projectRows = document.querySelectorAll('#resultsTableBody tr');
+            projectRows.forEach(row => {
+                const projectCell = row.querySelector('td:first-child');
+                if (projectCell && projectCell.textContent.trim() === projectName) {
+                    // Update current version to show "Building..." (column 5)
+                    const currentVersionCell = row.querySelector('td:nth-child(5)');
+                    if (currentVersionCell) {
+                        currentVersionCell.innerHTML = '<span class="badge bg-warning"><strong>Building...</strong></span>';
+                    }
+                    
+                    // Update status to show "IN PROGRESS" (column 6)
+                    const statusCell = row.querySelector('td:nth-child(6)');
+                    if (statusCell) {
+                        statusCell.innerHTML = '<span class="badge bg-warning">IN PROGRESS</span>';
+                    }
+                    
+                    // Update actions cell to show "Running..." (column 8)
+                    const actionsCell = row.querySelector('td:nth-child(8)');
+                    if (actionsCell) {
+                        actionsCell.innerHTML = '<span class="text-muted">Running...</span>';
+                    }
+                }
+            });
+        }
+        
+        // Start auto-refresh monitoring for the new deploy
+        startAutoRefreshForExecution();
         
         // Show success message
-        showToast('Retry initiated successfully!', 'success');
+        showToast('Deploy retry initiated successfully!', 'success');
         
         // Reset button state
         if (retryButton) {
