@@ -1,6 +1,7 @@
 using Amazon.SecurityToken;
 using Amazon.SecurityToken.Model;
 using EasyOps.Models;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Options;
 using System.Collections;
 using System.Diagnostics;
@@ -12,34 +13,34 @@ namespace EasyOps.Services
     public interface IAwsAuthenticationService
     {
         Task<AwsCredentialStatus> CheckCredentialStatusAsync(string? awsProfile = null);
-        string GetManualLoginInstructions(string? environmentName = null);
+        Task<string> GetManualLoginInstructionsAsync(string? environmentName = null);
         Task<bool> SwitchEnvironmentAsync(string environmentName);
         bool AreCredentialsValid();
         string GetCurrentProfile();
         string GetCurrentRegion();
         List<AwsEnvironmentConfiguration> GetAvailableEnvironments();
         AwsEnvironmentConfiguration? GetCurrentEnvironment();
+        Task InitializeAsync();
     }
 
     public class AwsAuthenticationService : IAwsAuthenticationService
     {
         private readonly AwsConfiguration _awsConfig;
+        private readonly IWebHostEnvironment _webHostEnvironment;
         private readonly ILogger<AwsAuthenticationService> _logger;
+        private readonly IDatabaseService _databaseService;
         private AwsCredentialStatus? _lastStatus;
         private DateTime _lastCheck = DateTime.MinValue;
         private readonly TimeSpan _cacheTimeout = TimeSpan.FromMinutes(5);
         private string _currentProfile = "";
         private AwsEnvironmentConfiguration? _currentEnvironment;
 
-        public AwsAuthenticationService(IOptions<AwsConfiguration> awsConfig, ILogger<AwsAuthenticationService> logger)
+        public AwsAuthenticationService(IOptions<AwsConfiguration> awsConfig, IWebHostEnvironment webHostEnvironment, ILogger<AwsAuthenticationService> logger, IDatabaseService databaseService)
         {
             _awsConfig = awsConfig.Value;
+            _webHostEnvironment = webHostEnvironment;
             _logger = logger;
-            
-            // Set default environment
-            _currentEnvironment = _awsConfig.AvailableEnvironments.FirstOrDefault(e => e.IsDefault) 
-                ?? _awsConfig.AvailableEnvironments.FirstOrDefault();
-            _currentProfile = _currentEnvironment?.AwsProfile ?? "default";
+            _databaseService = databaseService;
         }
 
         public async Task<AwsCredentialStatus> CheckCredentialStatusAsync(string? awsProfile = null)
@@ -58,31 +59,55 @@ namespace EasyOps.Services
             {
                 _logger.LogInformation("Checking AWS credentials for profile: {Profile}", profileToUse);
                 
-                // Try to call STS to validate credentials with specific profile
-                var awsCredentialsProvider = CreateCredentialsProvider(profileToUse);
-                using var stsClient = new AmazonSecurityTokenServiceClient(awsCredentialsProvider, Amazon.RegionEndpoint.GetBySystemName(_awsConfig.Region));
-                var request = new GetCallerIdentityRequest();
-                var response = await stsClient.GetCallerIdentityAsync(request);
-
-                status.IsValid = true;
-                status.AccountId = response.Account;
-                status.UserArn = response.Arn;
-                status.Region = _awsConfig.Region;
-                status.Profile = profileToUse;
-                
-                // Set environment info
-                var environment = _awsConfig.AvailableEnvironments.FirstOrDefault(e => e.AwsProfile == profileToUse);
-                if (environment != null)
+                // In development, skip actual AWS validation and return mock valid status
+                if (_webHostEnvironment.IsDevelopment())
                 {
-                    status.Environment = environment.Environment;
-                    status.EnvironmentName = environment.Name;
+                    _logger.LogInformation("Development mode: Skipping AWS credential validation");
+                    status.IsValid = true;
+                    status.AccountId = "123456789012"; // Mock account ID
+                    status.UserArn = $"arn:aws:iam::123456789012:user/{profileToUse}-dev-user";
+                    status.Region = _awsConfig.Region;
+                    status.Profile = profileToUse;
+                    
+                    var environments = await _databaseService.GetEnvironmentsAsync();
+                    var environment = environments.FirstOrDefault(e => e.AwsProfile == profileToUse);
+                    if (environment != null)
+                    {
+                        status.Environment = environment.EnvironmentType;
+                        status.EnvironmentName = environment.Name;
+                    }
+
+                    // Set expiration to 1 hour from now
+                    status.ExpiresAt = DateTime.UtcNow.AddHours(1);
                 }
+                else
+                {
+                    // Try to call STS to validate credentials with specific profile
+                    var awsCredentialsProvider = CreateCredentialsProvider(profileToUse);
+                    using var stsClient = new AmazonSecurityTokenServiceClient(awsCredentialsProvider, Amazon.RegionEndpoint.GetBySystemName(_awsConfig.Region));
+                    var request = new GetCallerIdentityRequest();
+                    var response = await stsClient.GetCallerIdentityAsync(request);
 
-                // Estimate expiration time (SAML2AWS sessions typically last based on config)
-                status.ExpiresAt = DateTime.UtcNow.AddMinutes(_awsConfig.CredentialTimeoutMinutes);
+                    status.IsValid = true;
+                    status.AccountId = response.Account;
+                    status.UserArn = response.Arn;
+                    status.Region = _awsConfig.Region;
+                    status.Profile = profileToUse;
+                    
+                    var environments = await _databaseService.GetEnvironmentsAsync();
+                    var environment = environments.FirstOrDefault(e => e.AwsProfile == profileToUse);
+                    if (environment != null)
+                    {
+                        status.Environment = environment.EnvironmentType;
+                        status.EnvironmentName = environment.Name;
+                    }
 
-                _logger.LogInformation("AWS credentials validated successfully. Account: {Account}, User: {User}", 
-                    response.Account, response.Arn);
+                    // Estimate expiration time (SAML2AWS sessions typically last based on config)
+                    status.ExpiresAt = DateTime.UtcNow.AddMinutes(_awsConfig.CredentialTimeoutMinutes);
+
+                    _logger.LogInformation("AWS credentials validated successfully. Account: {Account}, User: {User}", 
+                        response.Account, response.Arn);
+                }
             }
             catch (Exception ex)
             {
@@ -96,12 +121,29 @@ namespace EasyOps.Services
             return status;
         }
 
-        public string GetManualLoginInstructions(string? environmentName = null)
+        public async Task<string> GetManualLoginInstructionsAsync(string? environmentName = null)
         {
-            var environment = string.IsNullOrEmpty(environmentName) 
-                ? _currentEnvironment 
-                : _awsConfig.AvailableEnvironments.FirstOrDefault(e => e.Name == environmentName);
-                
+            AwsEnvironmentConfiguration? environment;
+            if (string.IsNullOrEmpty(environmentName))
+            {
+                environment = _currentEnvironment;
+            }
+            else
+            {
+                var environments = await _databaseService.GetEnvironmentsAsync();
+                var env = environments.FirstOrDefault(e => e.Name == environmentName);
+                environment = env != null ? new AwsEnvironmentConfiguration
+                {
+                    Name = env.Name,
+                    Environment = env.EnvironmentType,
+                    AwsProfile = env.AwsProfile,
+                    AccountId = env.AccountId,
+                    SamlRole = env.SamlRole,
+                    Description = env.Description,
+                    IsDefault = env.IsDefault
+                } : null;
+            }
+
             if (environment == null)
             {
                 return "Environment not found. Please check your configuration.";
@@ -149,7 +191,7 @@ namespace EasyOps.Services
 
         public string GetCurrentProfile()
         {
-            return _currentProfile ?? Environment.GetEnvironmentVariable("AWS_PROFILE") ?? "default";
+            return _currentProfile ?? System.Environment.GetEnvironmentVariable("AWS_PROFILE") ?? "default";
         }
 
         public string GetCurrentRegion()
@@ -170,16 +212,26 @@ namespace EasyOps.Services
             return new Amazon.Runtime.AnonymousAWSCredentials();
         }
 
-        public Task<bool> SwitchEnvironmentAsync(string environmentName)
+        public async Task<bool> SwitchEnvironmentAsync(string environmentName)
         {
-            var environment = _awsConfig.AvailableEnvironments.FirstOrDefault(e => e.Name == environmentName);
+            var environments = await _databaseService.GetEnvironmentsAsync();
+            var environment = environments.FirstOrDefault(e => e.Name == environmentName);
             if (environment == null)
             {
                 _logger.LogError("Environment not found: {EnvironmentName}", environmentName);
-                return Task.FromResult(false);
+                return false;
             }
 
-            _currentEnvironment = environment;
+            _currentEnvironment = new AwsEnvironmentConfiguration
+            {
+                Name = environment.Name,
+                Environment = environment.EnvironmentType,
+                AwsProfile = environment.AwsProfile,
+                AccountId = environment.AccountId,
+                SamlRole = environment.SamlRole,
+                Description = environment.Description,
+                IsDefault = environment.IsDefault
+            };
             _currentProfile = environment.AwsProfile;
             
             // Clear cache to force recheck with new profile
@@ -189,12 +241,58 @@ namespace EasyOps.Services
             _logger.LogInformation("Switched to environment: {EnvironmentName} (Profile: {Profile})", 
                 environmentName, _currentProfile);
                 
-            return Task.FromResult(true);
+            return true;
+        }
+
+        public async Task InitializeAsync()
+        {
+            try
+            {
+                var environments = await _databaseService.GetEnvironmentsAsync();
+                var defaultEnv = environments.FirstOrDefault(e => e.IsDefault) ?? environments.FirstOrDefault();
+
+                if (defaultEnv != null)
+                {
+                    _currentEnvironment = new AwsEnvironmentConfiguration
+                    {
+                        Name = defaultEnv.Name,
+                        Environment = defaultEnv.EnvironmentType,
+                        AwsProfile = defaultEnv.AwsProfile,
+                        AccountId = defaultEnv.AccountId,
+                        SamlRole = defaultEnv.SamlRole,
+                        Description = defaultEnv.Description,
+                        IsDefault = defaultEnv.IsDefault
+                    };
+                    _currentProfile = _currentEnvironment.AwsProfile;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error initializing AWS authentication service");
+            }
         }
 
         public List<AwsEnvironmentConfiguration> GetAvailableEnvironments()
         {
-            return _awsConfig.AvailableEnvironments;
+            try
+            {
+                var environments = _databaseService.GetEnvironmentsAsync().GetAwaiter().GetResult();
+                return environments.Select(e => new AwsEnvironmentConfiguration
+                {
+                    Name = e.Name,
+                    Environment = e.EnvironmentType,
+                    AwsProfile = e.AwsProfile,
+                    AccountId = e.AccountId,
+                    SamlRole = e.SamlRole,
+                    Description = e.Description,
+                    IsDefault = e.IsDefault
+                }).ToList();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting available environments");
+                return new List<AwsEnvironmentConfiguration>();
+            }
         }
 
         public AwsEnvironmentConfiguration? GetCurrentEnvironment()

@@ -21,6 +21,32 @@ let savedProjectSelections = new Map(); // Store checkbox states for projects
 let isAuthenticated = false;
 let currentUser = '';
 
+// Helper function to create Jenkins job URLs
+function createJenkinsJobUrl(projectName, branch, jobType = 'build', buildNumber = null) {
+    if (!currentMonorepo || !projectName || !branch) {
+        return '#';
+    }
+    
+    // Single encode branch names to handle special characters like "feature/SEVT-630-test"
+    // This should result in feature%252F... (which is what Jenkins expects)
+    const encodedBranch = encodeURIComponent(encodeURIComponent(branch));
+    const pipelineType = jobType === 'deploy' ? 'deploy-pipeline' : 'build-pipeline';
+    
+    // Correct URL structure based on working example:
+    // https://jenkins.int.ts.dev.sbet.cloud/job/Sports/job/sb-rtp-sports-rl/job/abacus/job/build-pipeline/job/feature%252FSEVT-1079-upgrade-to-support-dotnet-8/1/
+    // Structure: {JENKINS_BASE_URL}/job/Sports/job/{currentMonorepo}/job/{projectName}/job/{pipelineType}/job/{encodedBranch}/{buildNumber}/
+    let url = `${JENKINS_BASE_URL}/job/Sports/job/${currentMonorepo}/job/${projectName}/job/${pipelineType}/job/${encodedBranch}`;
+    
+    // Add build number if provided
+    if (buildNumber && buildNumber > 0) {
+        url += `/${buildNumber}/`;
+    } else {
+        url += '/';
+    }
+    
+    return url;
+}
+
 // Authentication Functions
 async function checkAuthStatus() {
     try {
@@ -66,25 +92,58 @@ function updateAuthUI() {
     }
 }
 
+function setupAuthMethodToggle() {
+    const tokenRadio = document.getElementById('authMethodToken');
+    const passwordRadio = document.getElementById('authMethodPassword');
+    
+    tokenRadio.addEventListener('change', () => updateAuthMethodUI('token'));
+    passwordRadio.addEventListener('change', () => updateAuthMethodUI('password'));
+}
+
+function updateAuthMethodUI(method) {
+    const credentialLabel = document.getElementById('credentialLabel');
+    const credentialHelp = document.getElementById('credentialHelp');
+    const credentialInput = document.getElementById('jenkinsCredential');
+    
+    if (method === 'password') {
+        credentialLabel.textContent = 'Jenkins Password';
+        credentialHelp.innerHTML = '🔒 Enter your Jenkins account password. A new API token will be generated automatically.';
+        credentialInput.placeholder = 'Enter your password';
+    } else {
+        credentialLabel.textContent = 'Jenkins API Token';
+        credentialHelp.innerHTML = '<a href="https://jenkins.int.ts.dev.sbet.cloud/user/your-username/configure" target="_blank">📖 How to generate an API Token in Jenkins</a>';
+        credentialInput.placeholder = 'Enter your API token';
+    }
+}
+
 function showLoginModal() {
     const modal = new bootstrap.Modal(document.getElementById('authModal'));
     modal.show();
     
     // Clear previous values
     document.getElementById('jenkinsUsername').value = '';
-    document.getElementById('jenkinsApiToken').value = '';
+    document.getElementById('jenkinsCredential').value = '';
     document.getElementById('authError').style.display = 'none';
+    
+    // Set up authentication method toggle
+    setupAuthMethodToggle();
+    
+    // Initialize UI for default selection (API Token)
+    updateAuthMethodUI('token');
 }
 
 async function authenticateUser() {
     const username = document.getElementById('jenkinsUsername').value.trim();
-    const apiToken = document.getElementById('jenkinsApiToken').value.trim();
+    const credential = document.getElementById('jenkinsCredential').value.trim();
+    const authMethod = document.querySelector('input[name="authMethod"]:checked').id === 'authMethodPassword' ? 'password' : 'token';
     const authError = document.getElementById('authError');
     const authLoading = document.getElementById('authLoading');
+    const authLoadingText = document.getElementById('authLoadingText');
     const loginSubmitBtn = document.getElementById('loginSubmitBtn');
 
-    if (!username || !apiToken) {
-        authError.textContent = 'Please enter both username and API token.';
+    if (!username || !credential) {
+        const fieldName = authMethod === 'password' ? 'password' : 'API token';
+        authError.textContent = `Please enter both username and ${fieldName}.`;
         authError.style.display = 'block';
         return;
     }
@@ -92,18 +151,22 @@ async function authenticateUser() {
     // Show loading state
     authError.style.display = 'none';
     authLoading.style.display = 'block';
+    authLoadingText.textContent = authMethod === 'password' ? 'Validating password and generating token...' : 'Verifying credentials...';
     loginSubmitBtn.disabled = true;
 
     try {
-        const response = await fetch('/api/auth/login', {
+        // Choose the appropriate endpoint and request body
+        const endpoint = authMethod === 'password' ? '/api/auth/login-with-password' : '/api/auth/login';
+        const requestBody = authMethod === 'password' 
+            ? { username: username, password: credential }
+            : { username: username, apiToken: credential };
+
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                username: username,
-                apiToken: apiToken
-            })
+            body: JSON.stringify(requestBody)
         });
 
         const result = await response.json();
@@ -128,9 +191,10 @@ async function authenticateUser() {
         }
     } catch (error) {
         console.error('Authentication error:', error);
-        authError.textContent = 'Connection error. Please try again.';
+        authError.textContent = 'Network error occurred. Please try again.';
         authError.style.display = 'block';
     } finally {
+        // Hide loading state
         authLoading.style.display = 'none';
         loginSubmitBtn.disabled = false;
     }
@@ -682,11 +746,21 @@ function displayBuildVersionResults(container, results, showExecuteButton = fals
         
         // Add table headers including environment-specific deploy information
         const selectHeader = showExecuteButton ? '<th><input type="checkbox" id="selectAllProjects" onchange="toggleAllProjectSelection()" title="Select/Deselect All"></th>' : '';
-        html += `<thead><tr>${selectHeader}<th>Project</th><th>Branch</th><th>Build Version</th><th>Status</th><th>DEV Deploy</th><th>STG Deploy</th><th>PRD Deploy</th></tr></thead><tbody>`;
+        const versionHeader = showExecuteButton && currentMode === 'deploy' ? 'Build Version (Editable)' : 'Build Version';
+        html += `<thead><tr>${selectHeader}<th>Project</th><th>Branch</th><th>${versionHeader}</th><th>Status</th><th>DEV Deploy</th><th>STG Deploy</th><th>PRD Deploy</th><th>Job URL</th></tr></thead><tbody>`;
         
         successResults.forEach(result => {
             const buildNumber = result.buildNumber || 0;
             const version = result.version || 'No previous builds';
+            
+            // Debug result data
+            console.log(`📊 Processing result for ${result.project}:`, {
+                approvalUrl: result.approvalUrl,
+                status: result.status,
+                isBuilding: result.isBuilding,
+                showExecuteButton,
+                currentMode
+            });
             
             // Environment deploy information
             const devDeploy = result.devDeploy || { buildNumber: 0, version: 'No previous deploys' };
@@ -708,8 +782,67 @@ function displayBuildVersionResults(container, results, showExecuteButton = fals
                 return `<code class="small">${deploy.version}</code>`;
             };
 
-            // Format status cell with appropriate badge and spinner for running builds
-            const formatStatusCell = (status, isBuilding) => {
+            // Format status cell with appropriate badge, spinner, and approval link ONLY for production deploys
+            const formatStatusCell = (status, isBuilding, approvalUrl, project, isInDeployMode) => {
+                // Show approval link for ANY production deployment that has an approval URL
+                // Simplified logic: if it's production deploy mode and we have an approval URL, show the button
+                const isProdDeployment = isInDeployMode && currentDeployConfig && currentDeployConfig.prd === true;
+                const showApprovalLink = approvalUrl && isProdDeployment;
+                
+                // Enhanced debug logging for approval link logic
+                console.log(`🔍 [${project}] Approval link check:`, {
+                    approvalUrl: !!approvalUrl,
+                    approvalUrlValue: approvalUrl,
+                    isInDeployMode,
+                    isProdDeployment,
+                    showApprovalLink,
+                    currentDeployConfig,
+                    status,
+                    isBuilding,
+                    simpleBooleanCheck: `approvalUrl(${!!approvalUrl}) && isProdDeployment(${isProdDeployment}) = ${showApprovalLink}`
+                });
+                
+                if (showApprovalLink) {
+                    console.log(`✅ Adding approval button for ${project} - Production deployment detected`);
+                    
+                    // Show appropriate status badge
+                    let statusBadge;
+                    if (isBuilding) {
+                        statusBadge = `<span class="badge bg-primary">
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>RUNNING
+                        </span>`;
+                    } else {
+                        // For non-building jobs, show the actual status
+                        switch (status) {
+                            case 'SUCCESS':
+                                statusBadge = `<span class="badge bg-success">SUCCESS</span>`;
+                                break;
+                            case 'FAILED':
+                            case 'FAILURE':
+                                statusBadge = `<span class="badge bg-danger">FAILED</span>`;
+                                break;
+                            case 'UNSTABLE':
+                                statusBadge = `<span class="badge bg-warning text-dark">UNSTABLE</span>`;
+                                break;
+                            case 'ABORTED':
+                                statusBadge = `<span class="badge bg-secondary">ABORTED</span>`;
+                                break;
+                            default:
+                                statusBadge = `<span class="badge bg-info">READY</span>`;
+                        }
+                    }
+                        
+                    return `<div class="d-flex align-items-center gap-1">
+                        ${statusBadge}
+                        <button class="btn btn-sm btn-outline-danger" onclick="copyApprovalLink('${approvalUrl}', '${project}')" 
+                                title="🔴 Copy PRODUCTION approval link - Approval required for production deployment">
+                            <i class="bi bi-clipboard"></i> PRD Approval
+                        </button>
+                    </div>`;
+                } else {
+                    console.log(`❌ NOT adding approval button for ${project} - Conditions not met`);
+                }
+                
                 if (isBuilding) {
                     return `<span class="badge bg-primary">
                         <span class="spinner-border spinner-border-sm me-1" role="status"></span>RUNNING
@@ -731,15 +864,37 @@ function displayBuildVersionResults(container, results, showExecuteButton = fals
                 }
             };
             
+            // Create Jenkins job URLs for both build and deploy with build numbers
+            const buildJobUrl = createJenkinsJobUrl(result.project, result.branch, 'build', result.buildNumber);
+            const deployJobUrl = createJenkinsJobUrl(result.project, result.branch, 'deploy', devDeploy.buildNumber);
+            
+            // Create version cell - editable input in deploy mode, readonly code in build mode
+            const versionCell = (showExecuteButton && currentMode === 'deploy') ?
+                `<input type="text" class="form-control form-control-sm deploy-version-input" 
+                       data-project="${result.project}" value="${version}" 
+                       placeholder="Enter version to deploy" 
+                       style="min-width: 120px; font-family: monospace;">` :
+                `<code class="small">${version}</code>`;
+            
             html += `<tr>
                 ${selectCell}
                 <td><strong>${result.project}</strong></td>
                 <td><span class="badge bg-secondary">${result.branch}</span></td>
-                <td><code class="small">${version}</code></td>
-                <td>${formatStatusCell(result.status, result.isBuilding)}</td>
+                <td>${versionCell}</td>
+                <td>${formatStatusCell(result.status, result.isBuilding, result.approvalUrl, result.project, showExecuteButton && currentMode === 'deploy')}</td>
                 <td>${formatDeployCell(devDeploy, 'DEV')}</td>
                 <td>${formatDeployCell(stagingDeploy, 'STG')}</td>
                 <td>${formatDeployCell(productionDeploy, 'PRD')}</td>
+                <td>
+                    <div class="d-flex gap-1">
+                        <a href="${buildJobUrl}" target="_blank" class="btn btn-sm btn-outline-primary" title="View Build Pipeline in Jenkins">
+                            <i class="bi bi-box-arrow-up-right"></i> Build Link
+                        </a>
+                        <a href="${deployJobUrl}" target="_blank" class="btn btn-sm btn-outline-success" title="View Deploy Pipeline in Jenkins">
+                            <i class="bi bi-box-arrow-up-right"></i> Deploy Link
+                        </a>
+                    </div>
+                </td>
             </tr>`;
         });
         html += '</tbody></table></div>';
@@ -760,10 +915,15 @@ function displayBuildVersionResults(container, results, showExecuteButton = fals
                 onClickHandler = 'return false;'; // Prevent any action when disabled
             }
             
+            const helpText = currentMode === 'deploy' 
+                ? `Select projects above, edit build versions if needed, then click the button below to execute Jenkins ${actionText.toLowerCase()} jobs on branch <strong>${currentBranch}</strong>`
+                : `Select projects above and click the button below to execute Jenkins ${actionText.toLowerCase()} jobs on branch <strong>${currentBranch}</strong>`;
+                
             html += `<div class="mt-3 text-center">
                 <hr>
                 <h6>Ready to execute ${actionText.toLowerCase()} jobs?</h6>
-                <p class="text-muted">Select projects above and click the button below to execute Jenkins ${actionText.toLowerCase()} jobs on branch <strong>${currentBranch}</strong></p>
+                <p class="text-muted">${helpText}</p>
+                ${currentMode === 'deploy' ? '<p class="text-info small"><i class="bi bi-info-circle"></i> You can edit the build version for each project before deployment</p>' : ''}
                 <div class="d-flex justify-content-center">
                     <button type="button" class="btn ${buttonClass} btn-lg ${buttonDisabled ? 'disabled' : ''}" id="bulkExecuteBtn" onclick="${onClickHandler}" ${buttonDisabled ? 'disabled' : ''}>
                         ${buttonText} (<span id="selectedCount">${successResults.length}</span> selected)
@@ -886,6 +1046,13 @@ function updateDeployButtonState() {
     const anyEnvSelected = devChecked || stgChecked || prdChecked;
     const prodValid = !prdChecked || (prdChecked && changeDesc.value.trim().length > 0);
     
+    // Debug deployment config
+    console.log('🔧 Deploy button state update:', {
+        devChecked, stgChecked, prdChecked,
+        anyEnvSelected, prodValid,
+        lastBuildResultsCount: lastBuildResults.length
+    });
+    
     // Set deploy mode and store configuration
     if (anyEnvSelected && prodValid && lastBuildResults.length > 0) {
         currentMode = 'deploy';
@@ -895,6 +1062,8 @@ function updateDeployButtonState() {
             prd: prdChecked,
             changeDescription: changeDesc.value.trim()
         };
+        
+        console.log('✅ Deploy config set:', currentDeployConfig);
         
         // Update the results table to show the execute button
         displayBuildVersionResults(document.getElementById('resultsContent'), lastBuildResults, true);
@@ -1180,6 +1349,29 @@ function displayExecutionResults(container, results) {
                 currentVersionDisplay = previousVersionDisplay;
             }
             
+            // Create approval button for production deployments
+            const isProdDeployment = currentMode === 'deploy' && currentDeployConfig && currentDeployConfig.prd === true;
+            let actionsContent = `<span class="retry-button-placeholder-${result.project.replace(/[^a-zA-Z0-9]/g, '_')}"></span>`;
+            
+            if (isProdDeployment && result.jobUrl) {
+                // Generate approval URL from job URL
+                const approvalUrl = `${result.jobUrl}input/`;
+                console.log(`🔍 Adding approval button in execution results for ${result.project}:`, {
+                    isProdDeployment,
+                    jobUrl: result.jobUrl,
+                    approvalUrl
+                });
+                
+                actionsContent = `
+                    <div class="d-flex gap-1 flex-wrap">
+                        <button class="btn btn-sm btn-outline-danger" onclick="copyApprovalLink('${approvalUrl}', '${result.project}')" 
+                                title="🔴 Copy PRODUCTION approval link - Approval required for production deployment">
+                            <i class="bi bi-clipboard"></i> PRD Approval
+                        </button>
+                        <span class="retry-button-placeholder-${result.project.replace(/[^a-zA-Z0-9]/g, '_')}"></span>
+                    </div>`;
+            }
+            
             html += `<tr>
                 <td><strong>${result.project}</strong></td>
                 <td><span class="badge bg-secondary">${result.branch}</span></td>
@@ -1188,7 +1380,7 @@ function displayExecutionResults(container, results) {
                 <td>${currentVersionDisplay}</td>
                 <td><span class="badge bg-warning">IN PROGRESS</span></td>
                 <td><a href="${result.jobUrl || '#'}" target="_blank" class="btn btn-sm btn-outline-primary">View Job</a></td>
-                <td><span class="retry-button-placeholder-${result.project.replace(/[^a-zA-Z0-9]/g, '_')}"></span></td>
+                <td>${actionsContent}</td>
             </tr>`;
         });
         html += '</tbody></table></div></div>';
@@ -1587,9 +1779,17 @@ async function executeJobWithoutParameters(projectName, branch, mode, monorepo =
         
         // Add deploy parameters if in deploy mode
         if (mode === 'deploy' && currentDeployConfig) {
-            // Get the version from the project's last successful build
+            // Get the version from the editable input or fallback to project's last successful build
+            const versionInput = document.querySelector(`.deploy-version-input[data-project="${projectName}"]`);
             const projectResult = lastBuildResults.find(r => r.project === projectName);
-            const version = projectResult?.version || '0.0.0';
+            
+            // Use edited version if available, otherwise fallback to project's build version
+            const version = versionInput ? versionInput.value.trim() : (projectResult?.version || '0.0.0');
+            
+            // Validate version is not empty
+            if (!version) {
+                throw new Error(`Build version is required for deploying ${projectName}`);
+            }
             
             requestBody.deployParams = {
                 APP_VERSION: version,
@@ -2262,4 +2462,44 @@ function showToast(message, type = 'info') {
     toast.addEventListener('hidden.bs.toast', () => {
         toast.remove();
     });
+}
+
+// Copy approval link to clipboard
+async function copyApprovalLink(approvalUrl, projectName) {
+    try {
+        await navigator.clipboard.writeText(approvalUrl);
+        
+        // Show success toast
+        const toastContainer = document.getElementById('toastContainer');
+        if (!toastContainer) return;
+
+        const toast = document.createElement('div');
+        toast.className = 'toast align-items-center text-white bg-success border-0';
+        toast.setAttribute('role', 'alert');
+        toast.innerHTML = `
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi bi-check-circle me-2"></i>
+                    <strong>🔴 Production Approval Link Copied!</strong><br>
+                    <small>${projectName} production deployment approval link copied to clipboard</small>
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        `;
+
+        toastContainer.appendChild(toast);
+
+        const bsToast = new bootstrap.Toast(toast, { delay: 4000 });
+        bsToast.show();
+
+        toast.addEventListener('hidden.bs.toast', () => {
+            toast.remove();
+        });
+        
+    } catch (error) {
+        console.error('Failed to copy approval link:', error);
+        
+        // Fallback: show approval URL in an alert
+        alert(`Please copy the approval link manually:\n\n${approvalUrl}`);
+    }
 }

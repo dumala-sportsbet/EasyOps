@@ -1,0 +1,563 @@
+@page
+@model EasyOps.Pages.Admin.IndexModel
+@{
+    ViewData["Title"] = "Database Management";
+}
+
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h3 mb-0">Database Management</h1>
+                    <p class="text-muted">Manage Jenkins monorepos, AWS environments, and ECS clusters</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-primary" onclick="refreshData()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <ul class="nav nav-tabs mb-4" id="adminTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="monorepos-tab" data-bs-toggle="tab" data-bs-target="#monorepos" type="button" role="tab">
+                <i class="bi bi-git-branch"></i> Jenkins Monorepos
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="environments-tab" data-bs-toggle="tab" data-bs-target="#environments" type="button" role="tab">
+                <i class="bi bi-cloud"></i> AWS Environments
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="clusters-tab" data-bs-toggle="tab" data-bs-target="#clusters" type="button" role="tab">
+                <i class="bi bi-server"></i> ECS Clusters
+            </button>
+        </li>
+    </ul>
+
+    <!-- Tab Content -->
+    <div class="tab-content" id="adminTabsContent">
+        <!-- Monorepos Tab -->
+        <div class="tab-pane fade show active" id="monorepos" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Jenkins Monorepos</h5>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="showCreateMonorepoModal()">
+                        <i class="bi bi-plus-circle"></i> Add Monorepo
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped" id="monoreposTable">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Job Path</th>
+                                    <th>Description</th>
+                                    <th>Clusters</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var monorepo in Model.Monorepos)
+                                {
+                                    <tr>
+                                        <td><strong>@monorepo.Name</strong></td>
+                                        <td><code>@monorepo.JobPath</code></td>
+                                        <td>@monorepo.Description</td>
+                                        <td>
+                                            <span class="badge bg-secondary">@monorepo.Clusters.Count</span>
+                                        </td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button type="button" class="btn btn-outline-primary" onclick="editMonorepo(@monorepo.Id)">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button type="button" class="btn btn-outline-danger" onclick="deleteMonorepo(@monorepo.Id, '@monorepo.Name')">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Environments Tab -->
+        <div class="tab-pane fade" id="environments" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">AWS Environments</h5>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="showCreateEnvironmentModal()">
+                        <i class="bi bi-plus-circle"></i> Add Environment
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped" id="environmentsTable">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>AWS Profile</th>
+                                    <th>Account ID</th>
+                                    <th>Clusters</th>
+                                    <th>Default</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var environment in Model.Environments)
+                                {
+                                    <tr>
+                                        <td><strong>@environment.Name</strong></td>
+                                        <td><span class="badge bg-info">@environment.EnvironmentType</span></td>
+                                        <td><code>@environment.AwsProfile</code></td>
+                                        <td><code>@environment.AccountId</code></td>
+                                        <td>
+                                            <span class="badge bg-secondary">@environment.Clusters.Count</span>
+                                        </td>
+                                        <td>
+                                            @if (environment.IsDefault)
+                                            {
+                                                <span class="badge bg-success">Yes</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">No</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button type="button" class="btn btn-outline-primary" onclick="editEnvironment(@environment.Id)">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button type="button" class="btn btn-outline-danger" onclick="deleteEnvironment(@environment.Id, '@environment.Name')">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Clusters Tab -->
+        <div class="tab-pane fade" id="clusters" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">ECS Clusters</h5>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="showCreateClusterModal()">
+                        <i class="bi bi-plus-circle"></i> Add Cluster
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped" id="clustersTable">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Cluster Name</th>
+                                    <th>Environment</th>
+                                    <th>AWS Profile</th>
+                                    <th>Account ID</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var cluster in Model.Clusters)
+                                {
+                                    <tr>
+                                        <td><strong>@cluster.Name</strong></td>
+                                        <td><code>@cluster.ClusterName</code></td>
+                                        <td>
+                                            <span class="badge bg-info">@cluster.Environment?.Name</span>
+                                        </td>
+                                        <td><code>@cluster.AwsProfile</code></td>
+                                        <td><code>@cluster.AccountId</code></td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button type="button" class="btn btn-outline-primary" onclick="editCluster(@cluster.Id)">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button type="button" class="btn btn-outline-danger" onclick="deleteCluster(@cluster.Id, '@cluster.Name')">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+<!-- Monorepo Modal -->
+<div class="modal fade" id="monorepoModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="monorepoModalLabel">Create Monorepo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="monorepoForm" method="post">
+                <div class="modal-body">
+                    <input type="hidden" id="monorepoId" name="id" value="" />
+                    <div class="mb-3">
+                        <label for="monorepoName" class="form-label">Name *</label>
+                        <input type="text" class="form-control" id="monorepoName" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="monorepoJobPath" class="form-label">Job Path *</label>
+                        <input type="text" class="form-control" id="monorepoJobPath" name="jobPath" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="monorepoDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="monorepoDescription" name="description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Environment Modal -->
+<div class="modal fade" id="environmentModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="environmentModalLabel">Create Environment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="environmentForm" method="post">
+                <div class="modal-body">
+                    <input type="hidden" id="environmentId" name="id" value="" />
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="environmentName" class="form-label">Name *</label>
+                                <input type="text" class="form-control" id="environmentName" name="name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="environmentType" class="form-label">Environment Type *</label>
+                                <select class="form-control" id="environmentType" name="environmentType" required>
+                                    <option value="">Select Type</option>
+                                    <option value="Development">Development</option>
+                                    <option value="Staging">Staging</option>
+                                    <option value="Production">Production</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="environmentAwsProfile" class="form-label">AWS Profile *</label>
+                                <input type="text" class="form-control" id="environmentAwsProfile" name="awsProfile" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="environmentAccountId" class="form-label">Account ID</label>
+                                <input type="text" class="form-control" id="environmentAccountId" name="accountId">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="environmentSamlRole" class="form-label">SAML Role</label>
+                        <input type="text" class="form-control" id="environmentSamlRole" name="samlRole">
+                    </div>
+                    <div class="mb-3">
+                        <label for="environmentDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="environmentDescription" name="description" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="environmentIsDefault" name="isDefault">
+                            <label class="form-check-label" for="environmentIsDefault">
+                                Set as Default Environment
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Cluster Modal -->
+<div class="modal fade" id="clusterModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="clusterModalLabel">Create Cluster</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="clusterForm" method="post">
+                <div class="modal-body">
+                    <input type="hidden" id="clusterId" name="id" value="" />
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="clusterName" class="form-label">Display Name *</label>
+                                <input type="text" class="form-control" id="clusterName" name="name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="clusterClusterName" class="form-label">Cluster Name *</label>
+                                <input type="text" class="form-control" id="clusterClusterName" name="clusterName" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="clusterEnvironmentId" class="form-label">Environment *</label>
+                                <select class="form-control" id="clusterEnvironmentId" name="environmentId" required>
+                                    <option value="">Select Environment</option>
+                                    @foreach (var env in Model.Environments)
+                                    {
+                                        <option value="@env.Id">@env.Name (@env.EnvironmentType)</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="clusterMonorepoId" class="form-label">Monorepo (Optional)</label>
+                                <select class="form-control" id="clusterMonorepoId" name="monorepoId">
+                                    <option value="">No Monorepo</option>
+                                    @foreach (var repo in Model.Monorepos)
+                                    {
+                                        <option value="@repo.Id">@repo.Name</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="clusterAwsProfile" class="form-label">AWS Profile</label>
+                                <input type="text" class="form-control" id="clusterAwsProfile" name="awsProfile">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="clusterAccountId" class="form-label">Account ID</label>
+                                <input type="text" class="form-control" id="clusterAccountId" name="accountId">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="clusterDescription" class="form-label">Description</label>
+                        <textarea class="form-control" id="clusterDescription" name="description" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        function refreshData() {
+            window.location.reload();
+        }
+
+        // Success/Error message display
+        document.addEventListener('DOMContentLoaded', function() {
+            @if (TempData["Success"] != null)
+            {
+                <text>showAlert('@TempData["Success"]', 'success');</text>
+            }
+            @if (TempData["Error"] != null)
+            {
+                <text>showAlert('@TempData["Error"]', 'danger');</text>
+            }
+        });
+
+        function showAlert(message, type) {
+            const alertHtml = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>`;
+            document.querySelector('.container-fluid').insertAdjacentHTML('afterbegin', alertHtml);
+        }
+
+        // Monorepo CRUD functions
+        function showCreateMonorepoModal() {
+            document.getElementById('monorepoModalLabel').textContent = 'Create Monorepo';
+            document.getElementById('monorepoForm').action = '?handler=CreateMonorepo';
+            document.getElementById('monorepoId').value = '';
+            document.getElementById('monorepoName').value = '';
+            document.getElementById('monorepoJobPath').value = '';
+            document.getElementById('monorepoDescription').value = '';
+            new bootstrap.Modal(document.getElementById('monorepoModal')).show();
+        }
+
+        function editMonorepo(id) {
+            fetch(`/Admin/Index?handler=GetMonorepo&id=${id}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('monorepoModalLabel').textContent = 'Edit Monorepo';
+                    document.getElementById('monorepoForm').action = '?handler=UpdateMonorepo';
+                    document.getElementById('monorepoId').value = data.id;
+                    document.getElementById('monorepoName').value = data.name;
+                    document.getElementById('monorepoJobPath').value = data.jobPath;
+                    document.getElementById('monorepoDescription').value = data.description;
+                    new bootstrap.Modal(document.getElementById('monorepoModal')).show();
+                });
+        }
+
+        function deleteMonorepo(id, name) {
+            if (confirm(`Are you sure you want to delete the monorepo "${name}"?`)) {
+                const form = document.createElement('form');
+                form.method = 'post';
+                form.action = '?handler=DeleteMonorepo';
+
+                const idInput = document.createElement('input');
+                idInput.type = 'hidden';
+                idInput.name = 'id';
+                idInput.value = id;
+                form.appendChild(idInput);
+
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        // Environment CRUD functions
+        function showCreateEnvironmentModal() {
+            document.getElementById('environmentModalLabel').textContent = 'Create Environment';
+            document.getElementById('environmentForm').action = '?handler=CreateEnvironment';
+            document.getElementById('environmentId').value = '';
+            document.getElementById('environmentName').value = '';
+            document.getElementById('environmentType').value = '';
+            document.getElementById('environmentAwsProfile').value = '';
+            document.getElementById('environmentAccountId').value = '';
+            document.getElementById('environmentSamlRole').value = '';
+            document.getElementById('environmentDescription').value = '';
+            document.getElementById('environmentIsDefault').checked = false;
+            new bootstrap.Modal(document.getElementById('environmentModal')).show();
+        }
+
+        function editEnvironment(id) {
+            fetch(`/Admin/Index?handler=GetEnvironment&id=${id}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('environmentModalLabel').textContent = 'Edit Environment';
+                    document.getElementById('environmentForm').action = '?handler=UpdateEnvironment';
+                    document.getElementById('environmentId').value = data.id;
+                    document.getElementById('environmentName').value = data.name;
+                    document.getElementById('environmentType').value = data.environmentType;
+                    document.getElementById('environmentAwsProfile').value = data.awsProfile;
+                    document.getElementById('environmentAccountId').value = data.accountId;
+                    document.getElementById('environmentSamlRole').value = data.samlRole;
+                    document.getElementById('environmentDescription').value = data.description;
+                    document.getElementById('environmentIsDefault').checked = data.isDefault;
+                    new bootstrap.Modal(document.getElementById('environmentModal')).show();
+                });
+        }
+
+        function deleteEnvironment(id, name) {
+            if (confirm(`Are you sure you want to delete the environment "${name}"?`)) {
+                const form = document.createElement('form');
+                form.method = 'post';
+                form.action = '?handler=DeleteEnvironment';
+
+                const idInput = document.createElement('input');
+                idInput.type = 'hidden';
+                idInput.name = 'id';
+                idInput.value = id;
+                form.appendChild(idInput);
+
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+
+        // Cluster CRUD functions
+        function showCreateClusterModal() {
+            document.getElementById('clusterModalLabel').textContent = 'Create Cluster';
+            document.getElementById('clusterForm').action = '?handler=CreateCluster';
+            document.getElementById('clusterId').value = '';
+            document.getElementById('clusterName').value = '';
+            document.getElementById('clusterClusterName').value = '';
+            document.getElementById('clusterDescription').value = '';
+            document.getElementById('clusterAwsProfile').value = '';
+            document.getElementById('clusterAccountId').value = '';
+            document.getElementById('clusterEnvironmentId').value = '';
+            document.getElementById('clusterMonorepoId').value = '';
+            new bootstrap.Modal(document.getElementById('clusterModal')).show();
+        }
+
+        function editCluster(id) {
+            fetch(`/Admin/Index?handler=GetCluster&id=${id}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('clusterModalLabel').textContent = 'Edit Cluster';
+                    document.getElementById('clusterForm').action = '?handler=UpdateCluster';
+                    document.getElementById('clusterId').value = data.id;
+                    document.getElementById('clusterName').value = data.name;
+                    document.getElementById('clusterClusterName').value = data.clusterName;
+                    document.getElementById('clusterDescription').value = data.description;
+                    document.getElementById('clusterAwsProfile').value = data.awsProfile;
+                    document.getElementById('clusterAccountId').value = data.accountId;
+                    document.getElementById('clusterEnvironmentId').value = data.environmentId;
+                    document.getElementById('clusterMonorepoId').value = data.monorepoId || '';
+                    new bootstrap.Modal(document.getElementById('clusterModal')).show();
+                });
+        }
+
+        function deleteCluster(id, name) {
+            if (confirm(`Are you sure you want to delete the cluster "${name}"?`)) {
+                const form = document.createElement('form');
+                form.method = 'post';
+                form.action = '?handler=DeleteCluster';
+
+                const idInput = document.createElement('input');
+                idInput.type = 'hidden';
+                idInput.name = 'id';
+                idInput.value = id;
+                form.appendChild(idInput);
+
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+    </script>
+}

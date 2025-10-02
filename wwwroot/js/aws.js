@@ -423,9 +423,9 @@ function createServiceRow(service) {
     // Simplify service name by removing common prefixes
     const simplifiedServiceName = simplifyServiceName(service.serviceName);
     
-    // Docker image version (get first container's image tag)
-    const firstContainer = service.containers[0];
-    const imageVersion = firstContainer ? firstContainer.imageTag : 'N/A';
+    // Docker image version (get correct container's image tag based on service name)
+    const correctContainer = findCorrectContainer(service);
+    const imageVersion = correctContainer ? correctContainer.imageTag : 'N/A';
     
     // Running/Desired counts
     const runningDesired = `${service.runningCount}/${service.desiredCount}`;
@@ -511,6 +511,59 @@ function simplifyServiceName(serviceName) {
     }
     
     return simplified;
+}
+
+// Helper function to find the correct container based on service name
+function findCorrectContainer(service) {
+    if (!service.containers || service.containers.length === 0) {
+        return null;
+    }
+    
+    // If only one container, return it
+    if (service.containers.length === 1) {
+        return service.containers[0];
+    }
+    
+    // Get the simplified service name for matching
+    const simplifiedServiceName = simplifyServiceName(service.serviceName);
+    
+    // Try to find a container that matches the service name
+    // Look for containers that contain the service name (without common suffixes like -xray-daemon)
+    const matchingContainer = service.containers.find(container => {
+        // Skip containers with known auxiliary suffixes
+        const auxiliarySuffixes = ['-xray-daemon', '-sidecar', '-proxy', '-agent', '-monitor'];
+        const hasAuxiliarySuffix = auxiliarySuffixes.some(suffix => 
+            container.name.toLowerCase().includes(suffix)
+        );
+        
+        if (hasAuxiliarySuffix) {
+            return false;
+        }
+        
+        // Check if container name is similar to service name
+        const containerNameLower = container.name.toLowerCase();
+        const serviceNameLower = simplifiedServiceName.toLowerCase();
+        
+        // Direct match or service name contains container name
+        return containerNameLower === serviceNameLower || 
+               serviceNameLower.includes(containerNameLower) ||
+               containerNameLower.includes(serviceNameLower);
+    });
+    
+    // If we found a matching container, return it; otherwise return the first non-auxiliary container
+    if (matchingContainer) {
+        return matchingContainer;
+    }
+    
+    // Return the first container that doesn't have auxiliary suffixes
+    const nonAuxiliaryContainer = service.containers.find(container => {
+        const auxiliarySuffixes = ['-xray-daemon', '-sidecar', '-proxy', '-agent', '-monitor'];
+        return !auxiliarySuffixes.some(suffix => 
+            container.name.toLowerCase().includes(suffix)
+        );
+    });
+    
+    return nonAuxiliaryContainer || service.containers[0];
 }
 
 // Service Details Functions

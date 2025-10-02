@@ -38,11 +38,11 @@ namespace EasyOps.Controllers
         }
 
         [HttpPost("auth/manual-instructions")]
-        public IActionResult GetManualLoginInstructions([FromBody] GetLoginInstructionsRequest? request = null)
+        public async Task<IActionResult> GetManualLoginInstructions([FromBody] GetLoginInstructionsRequest? request = null)
         {
             try
             {
-                var instructions = _awsAuthService.GetManualLoginInstructions(request?.EnvironmentName);
+                var instructions = await _awsAuthService.GetManualLoginInstructionsAsync(request?.EnvironmentName);
                 return Ok(new { success = true, instructions = instructions });
             }
             catch (Exception ex)
@@ -106,11 +106,11 @@ namespace EasyOps.Controllers
         }
 
         [HttpGet("clusters")]
-        public IActionResult GetClusters()
+        public async Task<IActionResult> GetClusters()
         {
             try
             {
-                var clusters = _awsEcsService.GetAvailableClusters();
+                var clusters = await _awsEcsService.GetAvailableClustersAsync();
                 return Ok(clusters);
             }
             catch (Exception ex)

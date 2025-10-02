@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="AWSSDK.ECS" Version="4.0.5.1" />
     <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.2.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.9" />
   </ItemGroup>
 
 </Project>

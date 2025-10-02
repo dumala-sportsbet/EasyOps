@@ -1,5 +1,6 @@
 using EasyOps.Models;
 using EasyOps.Services;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,7 +9,12 @@ builder.WebHost.UseIISIntegration();
 
 // Add services to the container.
 builder.Services.AddRazorPages();
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.WriteIndented = true;
+    });
 builder.Services.AddHttpClient();
 
 // Add session support for storing user credentials
@@ -32,10 +38,28 @@ builder.Services.Configure<AwsConfiguration>(
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 
 // Register AWS services
-builder.Services.AddSingleton<IAwsAuthenticationService, AwsAuthenticationService>();
+builder.Services.AddScoped<IAwsAuthenticationService, AwsAuthenticationService>();
 builder.Services.AddScoped<IAwsEcsService, AwsEcsService>();
 
+// Register database context
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite("Data Source=app.db"));
+
+// Register database services
+builder.Services.AddScoped<IDatabaseService, DatabaseService>();
+
 var app = builder.Build();
+
+// Initialize database
+using (var scope = app.Services.CreateScope())
+{
+    var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+    await dbService.InitializeDatabaseAsync();
+
+    // Initialize AWS service
+    var awsService = scope.ServiceProvider.GetRequiredService<IAwsAuthenticationService>();
+    await awsService.InitializeAsync();
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

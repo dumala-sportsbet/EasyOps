@@ -16,13 +16,15 @@ namespace EasyOps.Controllers
         private readonly JenkinsConfiguration _jenkinsConfig;
         private readonly ILogger<JenkinsController> _logger;
         private readonly IAuthenticationService _authService;
+        private readonly IDatabaseService _databaseService;
 
-        public JenkinsController(IHttpClientFactory httpClientFactory, IOptions<JenkinsConfiguration> jenkinsConfig, ILogger<JenkinsController> logger, IAuthenticationService authService)
+        public JenkinsController(IHttpClientFactory httpClientFactory, IOptions<JenkinsConfiguration> jenkinsConfig, ILogger<JenkinsController> logger, IAuthenticationService authService, IDatabaseService databaseService)
         {
             _httpClientFactory = httpClientFactory;
             _jenkinsConfig = jenkinsConfig.Value;
             _logger = logger;
             _authService = authService;
+            _databaseService = databaseService;
         }
 
         private HttpClient CreateAuthenticatedHttpClient()
@@ -73,11 +75,19 @@ namespace EasyOps.Controllers
         }
 
         [HttpGet("monorepos")]
-        public ActionResult<List<MonorepoOption>> GetAvailableMonorepos()
+        public async Task<ActionResult<List<MonorepoOption>>> GetAvailableMonorepos()
         {
             try
             {
-                return Ok(_jenkinsConfig.AvailableMonorepos);
+                var monorepos = await _databaseService.GetMonoreposAsync();
+                var options = monorepos.Select(m => new MonorepoOption
+                {
+                    Name = m.Name,
+                    JobPath = m.JobPath,
+                    Description = m.Description
+                }).ToList();
+
+                return Ok(options);
             }
             catch (Exception ex)
             {
@@ -100,7 +110,7 @@ namespace EasyOps.Controllers
                 var selectedMonorepo = !string.IsNullOrEmpty(monorepo) ? monorepo : _jenkinsConfig.MonorepoJob;
 
                 // Get projects from Jenkins API - based on your structure: Sports/sb-rtp-sports-afl
-                var url = $"{_jenkinsConfig.BaseUrl}/job/{selectedMonorepo}/api/json";
+                var url = $"{_jenkinsConfig.BaseUrl}job/Sports/job/{selectedMonorepo}/api/json";
                 var response = await httpClient.GetAsync(url);
 
                 if (!response.IsSuccessStatusCode)
@@ -187,7 +197,7 @@ namespace EasyOps.Controllers
                 var selectedMonorepo = !string.IsNullOrEmpty(monorepo) ? monorepo : _jenkinsConfig.MonorepoJob;
 
                 // Get the pipeline job for the project and branch
-                var pipelineUrl = $"{_jenkinsConfig.BaseUrl}/job/{selectedMonorepo}/job/{project}/job/{pipelineType}/job/{branch}/api/json";
+                var pipelineUrl = $"{_jenkinsConfig.BaseUrl}job/Sports/job/{selectedMonorepo}/job/{project}/job/{pipelineType}/job/{branch}/api/json";
                 var response = await httpClient.GetAsync(pipelineUrl);
 
                 if (!response.IsSuccessStatusCode)
@@ -213,7 +223,7 @@ namespace EasyOps.Controllers
                 {
                     // Check if the last build is currently running
                     var lastBuildNumber = branchData.LastBuild.Number;
-                    var lastBuildDetailsUrl = $"{_jenkinsConfig.BaseUrl}/job/{selectedMonorepo}/job/{project}/job/{pipelineType}/job/{branch}/{lastBuildNumber}/api/json";
+                    var lastBuildDetailsUrl = $"{_jenkinsConfig.BaseUrl}job/Sports/job/{selectedMonorepo}/job/{project}/job/{pipelineType}/job/{branch}/{lastBuildNumber}/api/json";
                     
                     try
                     {
@@ -253,7 +263,7 @@ namespace EasyOps.Controllers
                 }
                 
                 var buildNumber = targetBuild.Number;
-                var buildDetailsUrl = $"{_jenkinsConfig.BaseUrl}/job/{selectedMonorepo}/job/{project}/job/{pipelineType}/job/{branch}/{buildNumber}/api/json";
+                var buildDetailsUrl = $"{_jenkinsConfig.BaseUrl}job/Sports/job/{selectedMonorepo}/job/{project}/job/{pipelineType}/job/{branch}/{buildNumber}/api/json";
 
                 var buildResponse = await httpClient.GetAsync(buildDetailsUrl);
                 if (!buildResponse.IsSuccessStatusCode)
@@ -291,7 +301,7 @@ namespace EasyOps.Controllers
                 var selectedMonorepo = !string.IsNullOrEmpty(monorepo) ? monorepo : _jenkinsConfig.MonorepoJob;
 
                 // Get the deploy pipeline job for the project and branch with all builds
-                var pipelineUrl = $"{_jenkinsConfig.BaseUrl}/job/{selectedMonorepo}/job/{project}/job/deploy-pipeline/job/{branch}/api/json?tree=builds[number,url]";
+                var pipelineUrl = $"{_jenkinsConfig.BaseUrl}job/Sports/job/{selectedMonorepo}/job/{project}/job/deploy-pipeline/job/{branch}/api/json?tree=builds[number,url]";
                 var response = await httpClient.GetAsync(pipelineUrl);
 
                 if (!response.IsSuccessStatusCode)
@@ -325,7 +335,7 @@ namespace EasyOps.Controllers
                     try
                     {
                         // Get build details to check result and extract deployment info
-                        var buildDetailsUrl = $"{_jenkinsConfig.BaseUrl}/job/{selectedMonorepo}/job/{project}/job/deploy-pipeline/job/{branch}/{build.Number}/api/json";
+                        var buildDetailsUrl = $"{_jenkinsConfig.BaseUrl}job/Sports/job/{selectedMonorepo}/job/{project}/job/deploy-pipeline/job/{branch}/{build.Number}/api/json";
                         var buildResponse = await httpClient.GetAsync(buildDetailsUrl);
 
                         if (!buildResponse.IsSuccessStatusCode) continue;
@@ -430,11 +440,11 @@ namespace EasyOps.Controllers
                 string jobInfoPath;
                 if (request.JobType?.ToLower() == "deploy")
                 {
-                    jobInfoPath = $"/job/{monorepoJob}/job/{request.Project}/job/deploy-pipeline/job/{encodedBranch}/api/json";
+                    jobInfoPath = $"/job/Sports/job/{monorepoJob}/job/{request.Project}/job/deploy-pipeline/job/{encodedBranch}/api/json";
                 }
                 else
                 {
-                    jobInfoPath = $"/job/{monorepoJob}/job/{request.Project}/job/build-pipeline/job/{encodedBranch}/api/json";
+                    jobInfoPath = $"/job/Sports/job/{monorepoJob}/job/{request.Project}/job/build-pipeline/job/{encodedBranch}/api/json";
                 }
 
                 var jobInfoUrl = $"{_jenkinsConfig.BaseUrl}{jobInfoPath}";
@@ -458,12 +468,12 @@ namespace EasyOps.Controllers
                 {
                     // For deploy jobs, always use buildWithParameters since they require parameters
                     //buildEndpoint = "buildWithParameters";
-                    jobPath = $"/job/{monorepoJob}/job/{request.Project}/job/deploy-pipeline/job/{encodedBranch}/{buildEndpoint}";
+                    jobPath = $"/job/Sports/job/{monorepoJob}/job/{request.Project}/job/deploy-pipeline/job/{encodedBranch}/{buildEndpoint}";
                 }
                 else
                 {
                     // For build jobs, use build-pipeline
-                    jobPath = $"/job/{monorepoJob}/job/{request.Project}/job/build-pipeline/job/{encodedBranch}/{buildEndpoint}";
+                    jobPath = $"/job/Sports/job/{monorepoJob}/job/{request.Project}/job/build-pipeline/job/{encodedBranch}/{buildEndpoint}";
                 }
 
                 var jobUrl = $"{_jenkinsConfig.BaseUrl}{jobPath}";
@@ -554,11 +564,11 @@ namespace EasyOps.Controllers
                     string buildPath;
                     if (jobType?.ToLower() == "deploy")
                     {
-                        buildPath = $"/job/{monorepoJob}/job/{project}/job/deploy-pipeline/job/{branch}/{buildNumber}/api/json";
+                        buildPath = $"/job/Sports/job/{monorepoJob}/job/{project}/job/deploy-pipeline/job/{branch}/{buildNumber}/api/json";
                     }
                     else
                     {
-                        buildPath = $"/job/{monorepoJob}/job/{project}/job/build-pipeline/job/{branch}/{buildNumber}/api/json";
+                        buildPath = $"/job/Sports/job/{monorepoJob}/job/{project}/job/build-pipeline/job/{branch}/{buildNumber}/api/json";
                     }
 
                     var buildUrl = $"{_jenkinsConfig.BaseUrl}{buildPath}";
@@ -607,11 +617,11 @@ namespace EasyOps.Controllers
                 string jobPath;
                 if (jobType?.ToLower() == "deploy")
                 {
-                    jobPath = $"/job/{monorepoJob}/job/{project}/job/deploy-pipeline/job/{branch}/api/json";
+                    jobPath = $"/job/Sports/job/{monorepoJob}/job/{project}/job/deploy-pipeline/job/{branch}/api/json";
                 }
                 else
                 {
-                    jobPath = $"/job/{monorepoJob}/job/{project}/job/build-pipeline/job/{branch}/api/json";
+                    jobPath = $"/job/Sports/job/{monorepoJob}/job/{project}/job/build-pipeline/job/{branch}/api/json";
                 }
 
                 var url = $"{_jenkinsConfig.BaseUrl}{jobPath}";
@@ -689,6 +699,12 @@ namespace EasyOps.Controllers
                         result.Timestamp = buildData?.Timestamp;
                         result.Duration = buildData?.Duration;
                         result.EstimatedDuration = buildData?.EstimatedDuration;
+                        
+                        // For production deployments, always provide approval URL
+                        if (jobType == "deploy" && !string.IsNullOrEmpty(buildData?.Url))
+                        {
+                            result.ApprovalUrl = $"{buildData.Url}input/";
+                        }
 
                         // Check if this is an in-progress build (different from last successful)
                         if (result.IsBuilding || result.Status == "IN_PROGRESS")
@@ -723,6 +739,7 @@ namespace EasyOps.Controllers
                 return StatusCode(500, "Internal server error");
             }
         }
+
 
         private string ExtractVersionFromBuild(JenkinsBuildResponse? buildData)
         {
@@ -902,11 +919,11 @@ namespace EasyOps.Controllers
                 string jobPath;
                 if (jobType?.ToLower() == "deploy")
                 {
-                    jobPath = $"/job/{selectedMonorepo}/job/{project}/job/deploy-pipeline/job/{encodedBranch}/api/json";
+                    jobPath = $"/job/Sports/job/{selectedMonorepo}/job/{project}/job/deploy-pipeline/job/{encodedBranch}/api/json";
                 }
                 else
                 {
-                    jobPath = $"/job/{selectedMonorepo}/job/{project}/job/build-pipeline/job/{encodedBranch}/api/json";
+                    jobPath = $"/job/Sports/job/{selectedMonorepo}/job/{project}/job/build-pipeline/job/{encodedBranch}/api/json";
                 }
 
                 var jobUrl = $"{_jenkinsConfig.BaseUrl}{jobPath}";
@@ -1034,11 +1051,11 @@ namespace EasyOps.Controllers
                 string jobInfoPath;
                 if (request.JobType?.ToLower() == "deploy")
                 {
-                    jobInfoPath = $"/job/{monorepoJob}/job/{request.Project}/job/deploy-pipeline/job/{encodedBranch}/api/json";
+                    jobInfoPath = $"/job/Sports/job/{monorepoJob}/job/{request.Project}/job/deploy-pipeline/job/{encodedBranch}/api/json";
                 }
                 else
                 {
-                    jobInfoPath = $"/job/{monorepoJob}/job/{request.Project}/job/build-pipeline/job/{encodedBranch}/api/json";
+                    jobInfoPath = $"/job/Sports/job/{monorepoJob}/job/{request.Project}/job/build-pipeline/job/{encodedBranch}/api/json";
                 }
 
                 var jobInfoUrl = $"{_jenkinsConfig.BaseUrl}{jobInfoPath}";
@@ -1056,11 +1073,11 @@ namespace EasyOps.Controllers
                 string jobPath;
                 if (request.JobType?.ToLower() == "deploy")
                 {
-                    jobPath = $"/job/{monorepoJob}/job/{request.Project}/job/deploy-pipeline/job/{encodedBranch}/buildWithParameters";
+                    jobPath = $"/job/Sports/job/{monorepoJob}/job/{request.Project}/job/deploy-pipeline/job/{encodedBranch}/buildWithParameters";
                 }
                 else
                 {
-                    jobPath = $"/job/{monorepoJob}/job/{request.Project}/job/build-pipeline/job/{encodedBranch}/buildWithParameters";
+                    jobPath = $"/job/Sports/job/{monorepoJob}/job/{request.Project}/job/build-pipeline/job/{encodedBranch}/buildWithParameters";
                 }
 
                 var jobUrl = $"{_jenkinsConfig.BaseUrl}{jobPath}";
@@ -1168,6 +1185,8 @@ namespace EasyOps.Controllers
 
     public class JenkinsAction
     {
+        [JsonPropertyName("_class")]
+        public string? Class { get; set; }
         public List<JenkinsParameter>? Parameters { get; set; }
         public Dictionary<string, object>? Environment { get; set; }
     }
@@ -1266,6 +1285,7 @@ namespace EasyOps.Controllers
         public string? LastSuccessfulVersion { get; set; }
         public string? InProgressVersion { get; set; }
         public bool HasInProgressBuild { get; set; }
+        public string? ApprovalUrl { get; set; }
     }
 
     public class JenkinsPipelineResponse

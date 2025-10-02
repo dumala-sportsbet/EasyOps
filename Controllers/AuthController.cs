@@ -33,6 +33,24 @@ namespace EasyOps.Controllers
             return Ok(result);
         }
 
+        [HttpPost("login-with-password")]
+        public async Task<IActionResult> LoginWithPassword([FromBody] PasswordAuthRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
+            {
+                return BadRequest(new AuthResponse { Success = false, Message = "Username and password are required" });
+            }
+
+            var result = await _authService.LoginWithPasswordAsync(request.Username, request.Password);
+            
+            if (result.Success && result.ApiToken != null)
+            {
+                _authService.SetUserCredentials(HttpContext, request.Username, result.ApiToken);
+            }
+
+            return Ok(result);
+        }
+
         [HttpPost("logout")]
         public IActionResult Logout()
         {

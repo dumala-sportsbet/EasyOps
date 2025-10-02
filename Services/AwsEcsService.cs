@@ -2,6 +2,7 @@ using Amazon.ECS;
 using Amazon.ECS.Model;
 using EasyOps.Models;
 using EasyOps.Services;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
 
@@ -11,28 +12,60 @@ namespace EasyOps.Services
     {
         Task<List<EcsServiceInfo>> GetClusterServicesAsync(string clusterName);
         Task<EcsServiceInfo?> GetServiceDetailsAsync(string clusterName, string serviceName);
-        List<EcsClusterOption> GetAvailableClusters();
+        Task<List<EcsClusterOption>> GetAvailableClustersAsync();
     }
 
     public class AwsEcsService : IAwsEcsService
     {
         private readonly AwsConfiguration _awsConfig;
+        private readonly IWebHostEnvironment _webHostEnvironment;
         private readonly IAwsAuthenticationService _awsAuthService;
+        private readonly IDatabaseService _databaseService;
         private readonly ILogger<AwsEcsService> _logger;
 
         public AwsEcsService(
-            IOptions<AwsConfiguration> awsConfig, 
+            IOptions<AwsConfiguration> awsConfig,
+            IWebHostEnvironment webHostEnvironment,
             IAwsAuthenticationService awsAuthService,
+            IDatabaseService databaseService,
             ILogger<AwsEcsService> logger)
         {
             _awsConfig = awsConfig.Value;
+            _webHostEnvironment = webHostEnvironment;
             _awsAuthService = awsAuthService;
+            _databaseService = databaseService;
             _logger = logger;
         }
 
-        public List<EcsClusterOption> GetAvailableClusters()
+        public async Task<List<EcsClusterOption>> GetAvailableClustersAsync()
         {
-            return _awsConfig.AvailableClusters;
+            try
+            {
+                var clusters = await _databaseService.GetClustersWithEnvironmentAsync();
+                var clusterOptions = clusters.Select(c => new EcsClusterOption
+                {
+                    Name = c.Name,
+                    ClusterName = c.ClusterName,
+                    Environment = c.EnvironmentType,
+                    Description = c.Description,
+                    AwsProfile = c.AwsProfile,
+                    AccountId = c.AccountId
+                }).ToList();
+
+                _logger.LogInformation("Loaded {Count} clusters from database", clusterOptions.Count);
+                foreach (var cluster in clusterOptions)
+                {
+                    _logger.LogInformation("Cluster: {Name}, Environment: {Environment}, ClusterName: {ClusterName}", 
+                        cluster.Name, cluster.Environment, cluster.ClusterName);
+                }
+
+                return clusterOptions;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting available clusters from database");
+                return new List<EcsClusterOption>();
+            }
         }
 
         public async Task<List<EcsServiceInfo>> GetClusterServicesAsync(string clusterName)
@@ -41,18 +74,29 @@ namespace EasyOps.Services
 
             try
             {
-                if (!_awsAuthService.AreCredentialsValid())
+                // Get the cluster information to determine the correct AWS profile
+                var clusters = await _databaseService.GetClustersWithEnvironmentAsync();
+                var cluster = clusters.FirstOrDefault(c => c.ClusterName == clusterName);
+                
+                if (cluster == null)
+                {
+                    throw new ArgumentException($"Cluster '{clusterName}' not found in database");
+                }
+
+                var awsProfile = cluster.AwsProfile;
+                
+                // In development mode, skip credential validation as we're using mock data for auth
+                if (!_webHostEnvironment.IsDevelopment() && !_awsAuthService.AreCredentialsValid())
                 {
                     throw new UnauthorizedAccessException("AWS credentials are not valid. Please refresh your SAML2AWS session.");
                 }
 
-                // Get the current profile and create credentials provider
-                var currentProfile = _awsAuthService.GetCurrentProfile();
-                var credentials = CreateCredentialsProvider(currentProfile);
+                // Create credentials provider using the cluster's specific AWS profile
+                var credentials = CreateCredentialsProvider(awsProfile);
                 
                 using var ecsClient = new AmazonECSClient(credentials, Amazon.RegionEndpoint.GetBySystemName(_awsConfig.Region));
 
-                _logger.LogInformation("Fetching services for cluster: {ClusterName} using profile: {Profile}", clusterName, currentProfile);
+                _logger.LogInformation("Fetching services for cluster: {ClusterName} using profile: {Profile}", clusterName, awsProfile);
 
                 // List all services in the cluster
                 var listServicesRequest = new ListServicesRequest
@@ -221,8 +265,8 @@ namespace EasyOps.Services
                 return credentials;
             }
             
-            // Fallback to anonymous credentials (will fail auth, but won't crash)
-            return new Amazon.Runtime.AnonymousAWSCredentials();
+            // If profile not found, throw a helpful error
+            throw new InvalidOperationException($"AWS profile '{profileName}' not found. Please configure your AWS credentials for this profile in ~/.aws/credentials or run 'aws configure sso --profile {profileName}' to set up SAML authentication.");
         }
     }
 }

@@ -31,15 +31,28 @@
                         <strong>ℹ️ Authentication Required</strong><br>
                         Please enter your Jenkins credentials to access pipeline operations.
                     </div>
+                    
+                    <!-- Authentication Method Selection -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Authentication Method:</label>
+                        <div class="btn-group w-100" role="group" aria-label="Authentication method">
+                            <input type="radio" class="btn-check" name="authMethod" id="authMethodToken" autocomplete="off" checked>
+                            <label class="btn btn-outline-primary" for="authMethodToken">🔑 API Token</label>
+                            
+                            <input type="radio" class="btn-check" name="authMethod" id="authMethodPassword" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="authMethodPassword">🔒 Password</label>
+                        </div>
+                    </div>
+                    
                     <form id="authForm">
                         <div class="mb-3">
                             <label for="jenkinsUsername" class="form-label">Jenkins Username</label>
                             <input type="text" class="form-control" id="jenkinsUsername" required>
                         </div>
                         <div class="mb-3">
-                            <label for="jenkinsApiToken" class="form-label">Jenkins API Token</label>
-                            <input type="password" class="form-control" id="jenkinsApiToken" required>
-                            <div class="form-text">
+                            <label for="jenkinsCredential" class="form-label" id="credentialLabel">Jenkins API Token</label>
+                            <input type="password" class="form-control" id="jenkinsCredential" required>
+                            <div class="form-text" id="credentialHelp">
                                 <a href="https://jenkins.int.ts.dev.sbet.cloud/user/your-username/configure" target="_blank">
                                     📖 How to generate an API Token in Jenkins
                                 </a>
@@ -50,7 +63,7 @@
                             <div class="spinner-border text-primary" role="status">
                                 <span class="visually-hidden">Authenticating...</span>
                             </div>
-                            <div class="mt-2">Verifying credentials...</div>
+                            <div class="mt-2" id="authLoadingText">Verifying credentials...</div>
                         </div>
                     </form>
                 </div>
@@ -186,6 +199,15 @@
                                 <label class="form-label fw-bold">Change Description:</label>
                                 <textarea class="form-control" id="changeDescription" rows="4" placeholder="Describe the changes being deployed..." style="display: none;"></textarea>
                                 <small class="text-muted" id="changeDescHint" style="display: none;">Please describe the changes being deployed</small>
+                            </div>
+                            <div class="alert alert-info small">
+                                <h6 class="alert-heading"><i class="bi bi-info-circle"></i> Production Approval Process</h6>
+                                <p class="mb-1">Production deployments require manual approval.</p>
+                                <ul class="mb-0 small">
+                                    <li>When a deploy reaches the approval step, the status will show "APPROVAL NEEDED"</li>
+                                    <li>Click the <i class="bi bi-clipboard"></i> button to copy the approval link</li>
+                                    <li>Send the link to the relevant approver</li>
+                                </ul>
                             </div>
                         </div>
                     </div>
