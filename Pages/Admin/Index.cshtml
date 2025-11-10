@@ -4,6 +4,11 @@
     ViewData["Title"] = "Database Management";
 }
 
+<!-- Hidden anti-forgery token for dynamic form submissions -->
+<form style="display: none;">
+    @Html.AntiForgeryToken()
+</form>
+
 <div class="container-fluid mt-4">
     <div class="row">
         <div class="col-12">
@@ -449,6 +454,13 @@
                 form.method = 'post';
                 form.action = '?handler=DeleteMonorepo';
 
+                // Add anti-forgery token
+                const tokenInput = document.createElement('input');
+                tokenInput.type = 'hidden';
+                tokenInput.name = '__RequestVerificationToken';
+                tokenInput.value = document.querySelector('input[name="__RequestVerificationToken"]').value;
+                form.appendChild(tokenInput);
+
                 const idInput = document.createElement('input');
                 idInput.type = 'hidden';
                 idInput.name = 'id';
@@ -499,6 +511,13 @@
                 form.method = 'post';
                 form.action = '?handler=DeleteEnvironment';
 
+                // Add anti-forgery token
+                const tokenInput = document.createElement('input');
+                tokenInput.type = 'hidden';
+                tokenInput.name = '__RequestVerificationToken';
+                tokenInput.value = document.querySelector('input[name="__RequestVerificationToken"]').value;
+                form.appendChild(tokenInput);
+
                 const idInput = document.createElement('input');
                 idInput.type = 'hidden';
                 idInput.name = 'id';
@@ -548,6 +567,13 @@
                 const form = document.createElement('form');
                 form.method = 'post';
                 form.action = '?handler=DeleteCluster';
+
+                // Add anti-forgery token
+                const tokenInput = document.createElement('input');
+                tokenInput.type = 'hidden';
+                tokenInput.name = '__RequestVerificationToken';
+                tokenInput.value = document.querySelector('input[name="__RequestVerificationToken"]').value;
+                form.appendChild(tokenInput);
 
                 const idInput = document.createElement('input');
                 idInput.type = 'hidden';

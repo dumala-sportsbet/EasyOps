@@ -161,8 +161,8 @@ namespace EasyOps.Controllers
                 // Get build pipeline information
                 var buildInfo = await GetPipelineInfo(httpClient, project, branch, "build-pipeline", selectedMonorepo);
 
-                // Get deployment information for all environments
-                var deployInfo = await GetDeploymentInfoForAllEnvironments(httpClient, project, branch, selectedMonorepo);
+                // TEMPORARILY COMMENTED OUT - Get deployment information for all environments
+                // var deployInfo = await GetDeploymentInfoForAllEnvironments(httpClient, project, branch, selectedMonorepo);
 
                 var result = new BuildVersionInfo
                 {
@@ -174,9 +174,16 @@ namespace EasyOps.Controllers
                     Timestamp = buildInfo.Timestamp,
                     Status = buildInfo.Status,
                     IsBuilding = buildInfo.IsBuilding,
-                    DevDeploy = deployInfo.DevDeploy,
-                    StagingDeploy = deployInfo.StagingDeploy,
-                    ProductionDeploy = deployInfo.ProductionDeploy
+                    LastSuccessfulBuildNumber = buildInfo.LastSuccessfulBuildNumber,
+                    LastSuccessfulVersion = buildInfo.LastSuccessfulVersion,
+                    LastSuccessfulBuildUrl = buildInfo.LastSuccessfulBuildUrl,
+                    // TEMPORARILY COMMENTED OUT - Deployment info
+                    // DevDeploy = deployInfo.DevDeploy,
+                    // StagingDeploy = deployInfo.StagingDeploy,
+                    // ProductionDeploy = deployInfo.ProductionDeploy
+                    DevDeploy = new DeployEnvironmentInfo(),
+                    StagingDeploy = new DeployEnvironmentInfo(),
+                    ProductionDeploy = new DeployEnvironmentInfo()
                 };
 
                 return Ok(result);
@@ -188,7 +195,8 @@ namespace EasyOps.Controllers
             }
         }
 
-        private async Task<(int BuildNumber, string Version, string? BuildUrl, long? Timestamp, string? Status, bool IsBuilding)> GetPipelineInfo(
+        private async Task<(int BuildNumber, string Version, string? BuildUrl, long? Timestamp, string? Status, bool IsBuilding, 
+            int? LastSuccessfulBuildNumber, string? LastSuccessfulVersion, string? LastSuccessfulBuildUrl)> GetPipelineInfo(
             HttpClient httpClient, string project, string branch, string pipelineType, string? monorepo = null)
         {
             try
@@ -203,88 +211,71 @@ namespace EasyOps.Controllers
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning($"{pipelineType} not found for project {project} and branch {branch}. Status: {response.StatusCode}");
-                    return (0, pipelineType == "build-pipeline" ? "No previous builds" : "No previous deploys", null, null, "NotFound", false);
+                    return (0, pipelineType == "build-pipeline" ? "No previous builds" : "No previous deploys", null, null, "NotFound", false, null, null, null);
                 }
 
                 var jsonContent = await response.Content.ReadAsStringAsync();
                 var branchData = JsonSerializer.Deserialize<JenkinsBranchResponse>(jsonContent, GetJsonOptions());
 
-                if (branchData?.LastSuccessfulBuild?.Number == null && branchData?.LastBuild?.Number == null)
+                if (branchData?.LastBuild?.Number == null)
                 {
-                    return (0, pipelineType == "build-pipeline" ? "No previous builds" : "No previous deploys", null, null, "NoBuildHistory", false);
+                    return (0, pipelineType == "build-pipeline" ? "No previous builds" : "No previous deploys", null, null, "NoBuildHistory", false, null, null, null);
                 }
 
-                // Smart build selection logic:
-                // 1. If LastBuild exists and is running, use it
-                // 2. Otherwise, use LastSuccessfulBuild for stable results
-                JenkinsBuildReference? targetBuild = null;
+                // Get the last build (regardless of status)
+                var lastBuildNumber = branchData.LastBuild.Number;
+                var lastBuildDetailsUrl = $"{_jenkinsConfig.BaseUrl}job/Sports/job/{selectedMonorepo}/job/{project}/job/{pipelineType}/job/{branch}/{lastBuildNumber}/api/json";
                 
-                if (branchData.LastBuild?.Number != null)
+                var lastBuildResponse = await httpClient.GetAsync(lastBuildDetailsUrl);
+                if (!lastBuildResponse.IsSuccessStatusCode)
                 {
-                    // Check if the last build is currently running
-                    var lastBuildNumber = branchData.LastBuild.Number;
-                    var lastBuildDetailsUrl = $"{_jenkinsConfig.BaseUrl}job/Sports/job/{selectedMonorepo}/job/{project}/job/{pipelineType}/job/{branch}/{lastBuildNumber}/api/json";
+                    return (lastBuildNumber, "Unknown version", null, null, "Unknown", false, null, null, null);
+                }
+
+                var lastBuildJsonContent = await lastBuildResponse.Content.ReadAsStringAsync();
+                var lastBuildData = JsonSerializer.Deserialize<JenkinsBuildResponse>(lastBuildJsonContent, GetJsonOptions());
+
+                // Extract version from last build
+                var lastVersion = ExtractVersionFromBuild(lastBuildData);
+                var lastStatus = lastBuildData?.Result ?? (lastBuildData?.Building == true ? "IN_PROGRESS" : "UNKNOWN");
+                var isBuilding = lastBuildData?.Building ?? false;
+
+                // Get last successful build info (if different from last build)
+                int? lastSuccessfulBuildNumber = null;
+                string? lastSuccessfulVersion = null;
+                string? lastSuccessfulBuildUrl = null;
+
+                // Only get last successful build if the last build is not successful
+                if (lastStatus != "SUCCESS" && branchData.LastSuccessfulBuild?.Number != null)
+                {
+                    lastSuccessfulBuildNumber = branchData.LastSuccessfulBuild.Number;
+                    var successBuildDetailsUrl = $"{_jenkinsConfig.BaseUrl}job/Sports/job/{selectedMonorepo}/job/{project}/job/{pipelineType}/job/{branch}/{lastSuccessfulBuildNumber}/api/json";
                     
                     try
                     {
-                        var lastBuildResponse = await httpClient.GetAsync(lastBuildDetailsUrl);
-                        if (lastBuildResponse.IsSuccessStatusCode)
+                        var successBuildResponse = await httpClient.GetAsync(successBuildDetailsUrl);
+                        if (successBuildResponse.IsSuccessStatusCode)
                         {
-                            var lastBuildJsonContent = await lastBuildResponse.Content.ReadAsStringAsync();
-                            var lastBuildData = JsonSerializer.Deserialize<JenkinsBuildResponse>(lastBuildJsonContent, GetJsonOptions());
+                            var successBuildJsonContent = await successBuildResponse.Content.ReadAsStringAsync();
+                            var successBuildData = JsonSerializer.Deserialize<JenkinsBuildResponse>(successBuildJsonContent, GetJsonOptions());
                             
-                            if (lastBuildData?.Building == true)
-                            {
-                                // Last build is running, use it
-                                targetBuild = branchData.LastBuild;
-                                _logger.LogInformation($"Using running build #{lastBuildNumber} for {project}");
-                            }
+                            lastSuccessfulVersion = ExtractVersionFromBuild(successBuildData);
+                            lastSuccessfulBuildUrl = successBuildData?.Url;
                         }
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, $"Error checking if last build is running for {project}");
+                        _logger.LogWarning(ex, $"Error getting last successful build info for {project}");
                     }
                 }
-                
-                // If no running build found, fall back to last successful build
-                if (targetBuild == null)
-                {
-                    targetBuild = branchData.LastSuccessfulBuild;
-                    if (targetBuild != null)
-                    {
-                        _logger.LogInformation($"Using last successful build #{targetBuild.Number} for {project}");
-                    }
-                }
-                
-                if (targetBuild == null)
-                {
-                    return (0, pipelineType == "build-pipeline" ? "No builds available" : "No deploys available", null, null, "NoBuildHistory", false);
-                }
-                
-                var buildNumber = targetBuild.Number;
-                var buildDetailsUrl = $"{_jenkinsConfig.BaseUrl}job/Sports/job/{selectedMonorepo}/job/{project}/job/{pipelineType}/job/{branch}/{buildNumber}/api/json";
 
-                var buildResponse = await httpClient.GetAsync(buildDetailsUrl);
-                if (!buildResponse.IsSuccessStatusCode)
-                {
-                    return (buildNumber, "Unknown version", null, null, "Unknown", false);
-                }
-
-                var buildJsonContent = await buildResponse.Content.ReadAsStringAsync();
-                var buildData = JsonSerializer.Deserialize<JenkinsBuildResponse>(buildJsonContent, GetJsonOptions());
-
-                // Extract version from build parameters or environment variables
-                var version = ExtractVersionFromBuild(buildData);
-                var status = buildData?.Result ?? (buildData?.Building == true ? "IN_PROGRESS" : "UNKNOWN");
-                var isBuilding = buildData?.Building ?? false;
-
-                return (buildNumber, version, buildData?.Url, buildData?.Timestamp, status, isBuilding);
+                return (lastBuildNumber, lastVersion, lastBuildData?.Url, lastBuildData?.Timestamp, lastStatus, isBuilding,
+                    lastSuccessfulBuildNumber, lastSuccessfulVersion, lastSuccessfulBuildUrl);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, $"Error getting {pipelineType} info for project {project} and branch {branch}");
-                return (0, "Error getting info", null, null, "Error", false);
+                return (0, "Error getting info", null, null, "Error", false, null, null, null);
             }
         }
 
@@ -1229,6 +1220,11 @@ namespace EasyOps.Controllers
         public long? Timestamp { get; set; }
         public string? Status { get; set; } // SUCCESS, FAILURE, IN_PROGRESS, etc.
         public bool IsBuilding { get; set; } // Whether build is currently running
+
+        // Last successful build information (if last build failed)
+        public int? LastSuccessfulBuildNumber { get; set; }
+        public string? LastSuccessfulVersion { get; set; }
+        public string? LastSuccessfulBuildUrl { get; set; }
 
         // Deploy pipeline information per environment
         public DeployEnvironmentInfo DevDeploy { get; set; } = new();

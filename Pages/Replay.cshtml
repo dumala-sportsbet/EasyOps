@@ -1,0 +1,251 @@
+@page
+@model EasyOps.Pages.ReplayModel
+@{
+    ViewData["Title"] = "Game Replay";
+}
+
+<div class="container-fluid">
+    <h1 class="mb-4">
+        <i class="bi bi-arrow-repeat"></i> Game Replay
+    </h1>
+
+    <!-- Nav tabs -->
+    <ul class="nav nav-tabs mb-4" id="replayTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="fetch-tab" data-bs-toggle="tab" data-bs-target="#fetch-panel" 
+                    type="button" role="tab" aria-controls="fetch-panel" aria-selected="true">
+                <i class="bi bi-download"></i> Fetch from Production
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="replay-tab" data-bs-toggle="tab" data-bs-target="#replay-panel" 
+                    type="button" role="tab" aria-controls="replay-panel" aria-selected="false">
+                <i class="bi bi-play-circle"></i> Execute Replay
+            </button>
+        </li>
+    </ul>
+
+    <!-- Tab content -->
+    <div class="tab-content" id="replayTabContent">
+        <!-- Fetch from Production Tab -->
+        <div class="tab-pane fade show active" id="fetch-panel" role="tabpanel" aria-labelledby="fetch-tab">
+            <div class="row">
+                <div class="col-lg-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Fetch Game from Production</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="fetchGameForm">
+                                <div class="mb-3">
+                                    <label for="gameId" class="form-label">Game ID <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="gameId" name="gameId" 
+                                           placeholder="Enter production game ID" required>
+                                    <div class="form-text">The unique identifier of the game in production database</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="gameName" class="form-label">Game Name <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="gameName" name="gameName" 
+                                           placeholder="Enter a friendly name for this game" required>
+                                    <div class="form-text">A descriptive name to help identify this game</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="notes" class="form-label">Notes (Optional)</label>
+                                    <textarea class="form-control" id="notes" name="notes" rows="3" 
+                                              placeholder="Add any notes about this game..."></textarea>
+                                </div>
+                                <div class="d-grid gap-2">
+                                    <button type="submit" class="btn btn-primary" id="fetchButton">
+                                        <i class="bi bi-download"></i> Fetch Game Data
+                                    </button>
+                                </div>
+                            </form>
+                            
+                            <!-- Progress indicator -->
+                            <div id="fetchProgress" class="mt-3" style="display: none;">
+                                <div class="d-flex align-items-center">
+                                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <span id="fetchProgressText">Fetching game data from production...</span>
+                                </div>
+                            </div>
+
+                            <!-- Result message -->
+                            <div id="fetchResult" class="mt-3" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-lg-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">About Fetch Process</h5>
+                        </div>
+                        <div class="card-body">
+                            <h6>What happens when you fetch a game?</h6>
+                            <ol>
+                                <li>Connects to production database</li>
+                                <li>Retrieves all events for the specified game ID</li>
+                                <li>Stores the events in the local database</li>
+                                <li>Preserves the original sequence and structure</li>
+                            </ol>
+                            
+                            <div class="alert alert-info mt-3">
+                                <i class="bi bi-info-circle"></i> 
+                                <strong>Note:</strong> The game data is read-only from production and will be 
+                                stored locally for replay purposes.
+                            </div>
+
+                            <div class="alert alert-warning mt-3">
+                                <i class="bi bi-exclamation-triangle"></i> 
+                                <strong>Important:</strong> Each game ID can only be fetched once. 
+                                Delete the existing entry if you need to re-fetch.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Execute Replay Tab -->
+        <div class="tab-pane fade" id="replay-panel" role="tabpanel" aria-labelledby="replay-tab">
+            <div class="row">
+                <div class="col-lg-8">
+                    <div class="card mb-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Saved Games</h5>
+                            <button class="btn btn-sm btn-outline-primary" id="refreshGamesButton">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div id="gamesTableContainer">
+                                <div class="text-center py-5">
+                                    <div class="spinner-border" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p class="mt-2">Loading saved games...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Replay execution panel -->
+                    <div id="replayExecutionPanel" class="card" style="display: none;">
+                        <div class="card-header">
+                            <h5 class="mb-0">Execute Replay</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="executeReplayForm">
+                                <input type="hidden" id="selectedGameId" name="replayGameId">
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">Selected Game</label>
+                                    <div class="p-3 bg-light rounded">
+                                        <strong id="selectedGameName"></strong>
+                                        <br>
+                                        <small class="text-muted">
+                                            Game ID: <span id="selectedGameIdDisplay"></span> | 
+                                            Events: <span id="selectedGameEvents"></span>
+                                        </small>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Target Environment</label>
+                                    <div class="p-3 bg-info bg-opacity-10 border border-info rounded">
+                                        <div class="d-flex align-items-center">
+                                            <i class="bi bi-info-circle me-2"></i>
+                                            <div>
+                                                <strong id="currentEnvironmentDisplay">Loading...</strong>
+                                                <br>
+                                                <small class="text-muted">Using your currently connected AWS environment</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <input type="hidden" id="targetEnvironment" name="targetEnvironment">
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="gameStartDateTime" class="form-label">Game Start Date & Time <span class="text-danger">*</span></label>
+                                    <input type="datetime-local" class="form-control" id="gameStartDateTime" name="gameStartDateTime" required>
+                                    <div class="form-text">The date and time when the game should start in the target environment</div>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="dryRun" name="dryRun">
+                                    <label class="form-check-label" for="dryRun">
+                                        Dry Run (simulate without actually sending events)
+                                    </label>
+                                </div>
+
+                                <div class="d-grid gap-2 d-md-flex">
+                                    <button type="submit" class="btn btn-success" id="executeButton">
+                                        <i class="bi bi-play-circle"></i> Execute Replay
+                                    </button>
+                                    <button type="button" class="btn btn-secondary" id="cancelExecuteButton">
+                                        <i class="bi bi-x-circle"></i> Cancel
+                                    </button>
+                                </div>
+                            </form>
+
+                            <!-- Execution progress -->
+                            <div id="executionProgress" class="mt-3" style="display: none;">
+                                <div class="progress">
+                                    <div id="executionProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                         role="progressbar" style="width: 0%"></div>
+                                </div>
+                                <p class="mt-2 text-center" id="executionProgressText">Processing...</p>
+                            </div>
+
+                            <!-- Execution result -->
+                            <div id="executionResult" class="mt-3" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Replay Instructions</h5>
+                        </div>
+                        <div class="card-body">
+                            <h6>How to execute a replay:</h6>
+                            <ol>
+                                <li>Make sure you're connected to the desired AWS environment</li>
+                                <li>Select a game from the list</li>
+                                <li>Set the game start date and time</li>
+                                <li>Optionally enable dry run mode</li>
+                                <li>Click "Execute Replay"</li>
+                            </ol>
+
+                            <div class="alert alert-info mt-3">
+                                <i class="bi bi-info-circle"></i> 
+                                <strong>Environment:</strong> The replay will use your currently connected 
+                                AWS environment. The system automatically detects which environment you're 
+                                logged into.
+                            </div>
+
+                            <div class="alert alert-info mt-3">
+                                <i class="bi bi-info-circle"></i> 
+                                <strong>Game Link:</strong> After a successful replay, you'll receive a 
+                                direct link to view the game in the frontend.
+                            </div>
+
+                            <div class="alert alert-warning mt-3">
+                                <i class="bi bi-exclamation-triangle"></i> 
+                                <strong>Warning:</strong> Replays cannot be undone. Make sure you're 
+                                connected to the correct environment before executing.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/replay.js" asp-append-version="true"></script>
+}

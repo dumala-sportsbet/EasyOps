@@ -1,0 +1,59 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run EasyOps Web App",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "run",
+                "--project",
+                "${workspaceFolder}/EasyOps.csproj"
+            ],
+            "problemMatcher": "$msCompile",
+            "isBackground": true,
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": false
+            }
+        },
+        {
+            "label": "Run MCP Server (Test Mode)",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "run",
+                "--project",
+                "${workspaceFolder}/EasyOps.McpServer/EasyOps.McpServer.csproj"
+            ],
+            "problemMatcher": "$msCompile",
+            "isBackground": true,
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": false
+            }
+        },
+        {
+            "label": "Run Both Apps",
+            "dependsOn": [
+                "Run EasyOps Web App",
+                "Run MCP Server (Test Mode)"
+            ],
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}

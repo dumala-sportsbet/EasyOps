@@ -171,17 +171,17 @@ namespace EasyOps.Services
                         ServiceName = service.ServiceName,
                         TaskDefinitionArn = service.TaskDefinition,
                         ServiceStatus = service.Status,
-                        RunningCount = service.RunningCount ?? 0,
-                        DesiredCount = service.DesiredCount ?? 0,
-                        PendingCount = service.PendingCount ?? 0,
-                        LastUpdated = service.CreatedAt ?? DateTime.UtcNow
+                        RunningCount = service.RunningCount,
+                        DesiredCount = service.DesiredCount,
+                        PendingCount = service.PendingCount,
+                        LastUpdated = service.CreatedAt
                     };
 
                     // Extract task definition details
                     if (taskDefinitions.TryGetValue(service.TaskDefinition, out var taskDef))
                     {
                         serviceInfo.TaskDefinitionFamily = taskDef.Family;
-                        serviceInfo.TaskDefinitionRevision = taskDef.Revision ?? 0;
+                        serviceInfo.TaskDefinitionRevision = taskDef.Revision;
                         serviceInfo.Cpu = taskDef.Cpu ?? "Not specified";
                         serviceInfo.Memory = taskDef.Memory ?? "Not specified";
 
@@ -195,7 +195,7 @@ namespace EasyOps.Services
                                 Cpu = container.Cpu,
                                 Memory = container.Memory,
                                 MemoryReservation = container.MemoryReservation,
-                                Essential = container.Essential ?? false
+                                Essential = container.Essential
                             };
 
                             // Extract image tag

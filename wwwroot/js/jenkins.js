@@ -14,6 +14,7 @@ let currentMonorepo = ''; // Store current selected monorepo
 let triggeredBuilds = new Map(); // Track triggered build numbers by project: Map<projectName, {buildNumber, mode, branch}>
 let originalSuccessfulBuilds = new Map(); // Store original last successful build info that never changes: Map<projectName, {buildNumber, version}>
 let autoRefreshInterval; // Store auto-refresh interval for build monitoring
+let versionAutoRefreshInterval; // Store auto-refresh interval for version checking when builds are running
 let currentDeployConfig = null; // Store deploy configuration {dev, stg, prd, changeDescription}
 let savedProjectSelections = new Map(); // Store checkbox states for projects
 
@@ -552,6 +553,10 @@ async function quickCheckVersionsAll() {
         lastBuildResults = results.filter(r => r.success);
         
         displayBuildVersionResults(document.getElementById('resultsContent'), results, true);
+        
+        // Check if any builds are running and start auto-refresh if needed
+        checkAndStartVersionAutoRefresh(results);
+        
         showActionSelection();
         
     } catch (error) {
@@ -744,28 +749,38 @@ function displayBuildVersionResults(container, results, showExecuteButton = fals
         html += '<div class="alert alert-success"><h6>✅ Latest Pipeline Versions:</h6>';
         html += '<div class="table-responsive"><table class="table table-sm mb-0">';
         
-        // Add table headers including environment-specific deploy information
+        // Add table headers - TEMPORARILY REMOVED DEV/STG/PRD Deploy columns
         const selectHeader = showExecuteButton ? '<th><input type="checkbox" id="selectAllProjects" onchange="toggleAllProjectSelection()" title="Select/Deselect All"></th>' : '';
         const versionHeader = showExecuteButton && currentMode === 'deploy' ? 'Build Version (Editable)' : 'Build Version';
-        html += `<thead><tr>${selectHeader}<th>Project</th><th>Branch</th><th>${versionHeader}</th><th>Status</th><th>DEV Deploy</th><th>STG Deploy</th><th>PRD Deploy</th><th>Job URL</th></tr></thead><tbody>`;
+        // TEMPORARILY COMMENTED OUT deployment columns
+        // html += `<thead><tr>${selectHeader}<th>Project</th><th>Branch</th><th>${versionHeader}</th><th>Status</th><th>DEV Deploy</th><th>STG Deploy</th><th>PRD Deploy</th><th>Job URL</th></tr></thead><tbody>`;
+        html += `<thead><tr>${selectHeader}<th>Project</th><th>Branch</th><th>${versionHeader}</th><th>Last Build Status</th><th>Last Successful Version</th><th>Job URL</th></tr></thead><tbody>`;
         
         successResults.forEach(result => {
             const buildNumber = result.buildNumber || 0;
             const version = result.version || 'No previous builds';
             
+            // Get last successful build info (if available)
+            const lastSuccessfulVersion = result.lastSuccessfulVersion || null;
+            const lastSuccessfulBuildNumber = result.lastSuccessfulBuildNumber || null;
+            const lastSuccessfulBuildUrl = result.lastSuccessfulBuildUrl || null;
+            
             // Debug result data
             console.log(`📊 Processing result for ${result.project}:`, {
-                approvalUrl: result.approvalUrl,
+                buildNumber,
+                version,
                 status: result.status,
                 isBuilding: result.isBuilding,
+                lastSuccessfulBuildNumber,
+                lastSuccessfulVersion,
                 showExecuteButton,
                 currentMode
             });
             
-            // Environment deploy information
-            const devDeploy = result.devDeploy || { buildNumber: 0, version: 'No previous deploys' };
-            const stagingDeploy = result.stagingDeploy || { buildNumber: 0, version: 'No previous deploys' };
-            const productionDeploy = result.productionDeploy || { buildNumber: 0, version: 'No previous deploys' };
+            // TEMPORARILY COMMENTED OUT - Environment deploy information
+            // const devDeploy = result.devDeploy || { buildNumber: 0, version: 'No previous deploys' };
+            // const stagingDeploy = result.stagingDeploy || { buildNumber: 0, version: 'No previous deploys' };
+            // const productionDeploy = result.productionDeploy || { buildNumber: 0, version: 'No previous deploys' };
             
             // Add checkbox for project selection
             const selectCell = showExecuteButton ? 
@@ -774,124 +789,95 @@ function displayBuildVersionResults(container, results, showExecuteButton = fals
                            data-branch="${result.branch}" checked onchange="updateBulkExecuteButton()">
                 </td>` : '';
             
-            // Format deploy cells with version only
-            const formatDeployCell = (deploy, envName) => {
-                if (deploy.buildNumber === 0) {
-                    return `<small class="text-muted">No deploys</small>`;
-                }
-                return `<code class="small">${deploy.version}</code>`;
-            };
+            // TEMPORARILY COMMENTED OUT - Format deploy cells
+            // const formatDeployCell = (deploy, envName) => {
+            //     if (deploy.buildNumber === 0) {
+            //         return `<small class="text-muted">No deploys</small>`;
+            //     }
+            //     return `<code class="small">${deploy.version}</code>`;
+            // };
 
-            // Format status cell with appropriate badge, spinner, and approval link ONLY for production deploys
-            const formatStatusCell = (status, isBuilding, approvalUrl, project, isInDeployMode) => {
-                // Show approval link for ANY production deployment that has an approval URL
-                // Simplified logic: if it's production deploy mode and we have an approval URL, show the button
-                const isProdDeployment = isInDeployMode && currentDeployConfig && currentDeployConfig.prd === true;
-                const showApprovalLink = approvalUrl && isProdDeployment;
-                
-                // Enhanced debug logging for approval link logic
-                console.log(`🔍 [${project}] Approval link check:`, {
-                    approvalUrl: !!approvalUrl,
-                    approvalUrlValue: approvalUrl,
-                    isInDeployMode,
-                    isProdDeployment,
-                    showApprovalLink,
-                    currentDeployConfig,
-                    status,
-                    isBuilding,
-                    simpleBooleanCheck: `approvalUrl(${!!approvalUrl}) && isProdDeployment(${isProdDeployment}) = ${showApprovalLink}`
-                });
-                
-                if (showApprovalLink) {
-                    console.log(`✅ Adding approval button for ${project} - Production deployment detected`);
-                    
-                    // Show appropriate status badge
-                    let statusBadge;
-                    if (isBuilding) {
-                        statusBadge = `<span class="badge bg-primary">
-                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>RUNNING
-                        </span>`;
-                    } else {
-                        // For non-building jobs, show the actual status
-                        switch (status) {
-                            case 'SUCCESS':
-                                statusBadge = `<span class="badge bg-success">SUCCESS</span>`;
-                                break;
-                            case 'FAILED':
-                            case 'FAILURE':
-                                statusBadge = `<span class="badge bg-danger">FAILED</span>`;
-                                break;
-                            case 'UNSTABLE':
-                                statusBadge = `<span class="badge bg-warning text-dark">UNSTABLE</span>`;
-                                break;
-                            case 'ABORTED':
-                                statusBadge = `<span class="badge bg-secondary">ABORTED</span>`;
-                                break;
-                            default:
-                                statusBadge = `<span class="badge bg-info">READY</span>`;
-                        }
-                    }
-                        
-                    return `<div class="d-flex align-items-center gap-1">
-                        ${statusBadge}
-                        <button class="btn btn-sm btn-outline-danger" onclick="copyApprovalLink('${approvalUrl}', '${project}')" 
-                                title="🔴 Copy PRODUCTION approval link - Approval required for production deployment">
-                            <i class="bi bi-clipboard"></i> PRD Approval
-                        </button>
-                    </div>`;
-                } else {
-                    console.log(`❌ NOT adding approval button for ${project} - Conditions not met`);
-                }
-                
+            // Format status cell with appropriate badge and build number
+            const formatStatusCell = (status, isBuilding, buildNum) => {
                 if (isBuilding) {
-                    return `<span class="badge bg-primary">
-                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>RUNNING
-                    </span>`;
+                    return `<div>
+                        <span class="badge bg-primary">
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>RUNNING
+                        </span>
+                        <div class="small text-muted mt-1">Build #${buildNum}</div>
+                    </div>`;
                 }
                 
+                let badge;
                 switch (status) {
                     case 'SUCCESS':
-                        return `<span class="badge bg-success">SUCCESS</span>`;
+                        badge = `<span class="badge bg-success">SUCCESS</span>`;
+                        break;
                     case 'FAILED':
                     case 'FAILURE':
-                        return `<span class="badge bg-danger">FAILED</span>`;
+                        badge = `<span class="badge bg-danger">FAILED</span>`;
+                        break;
                     case 'UNSTABLE':
-                        return `<span class="badge bg-warning text-dark">UNSTABLE</span>`;
+                        badge = `<span class="badge bg-warning text-dark">UNSTABLE</span>`;
+                        break;
                     case 'ABORTED':
-                        return `<span class="badge bg-secondary">ABORTED</span>`;
+                        badge = `<span class="badge bg-secondary">ABORTED</span>`;
+                        break;
                     default:
-                        return `<span class="badge bg-secondary">${status || 'UNKNOWN'}</span>`;
+                        badge = `<span class="badge bg-secondary">${status || 'UNKNOWN'}</span>`;
+                }
+                
+                return `<div>
+                    ${badge}
+                    <div class="small text-muted mt-1">Build #${buildNum}</div>
+                </div>`;
+            };
+            
+            // Format last successful version cell
+            const formatLastSuccessfulCell = () => {
+                if (result.status === 'SUCCESS') {
+                    // If last build is successful, show same version
+                    return `<code class="small text-success">${version}</code>`;
+                } else if (lastSuccessfulVersion && lastSuccessfulBuildNumber) {
+                    // Show last successful build info
+                    return `<div>
+                        <code class="small">${lastSuccessfulVersion}</code>
+                        <div class="small text-muted mt-1">Build #${lastSuccessfulBuildNumber}</div>
+                    </div>`;
+                } else {
+                    // No successful build
+                    return `<small class="text-muted">No successful builds</small>`;
                 }
             };
             
             // Create Jenkins job URLs for both build and deploy with build numbers
             const buildJobUrl = createJenkinsJobUrl(result.project, result.branch, 'build', result.buildNumber);
-            const deployJobUrl = createJenkinsJobUrl(result.project, result.branch, 'deploy', devDeploy.buildNumber);
+            // TEMPORARILY COMMENTED OUT deploy job URL
+            // const deployJobUrl = createJenkinsJobUrl(result.project, result.branch, 'deploy', devDeploy.buildNumber);
             
             // Create version cell - editable input in deploy mode, readonly code in build mode
+            // Show current version from last build (successful or failed)
             const versionCell = (showExecuteButton && currentMode === 'deploy') ?
                 `<input type="text" class="form-control form-control-sm deploy-version-input" 
                        data-project="${result.project}" value="${version}" 
                        placeholder="Enter version to deploy" 
                        style="min-width: 120px; font-family: monospace;">` :
-                `<code class="small">${version}</code>`;
+                `<div>
+                    <code class="small">${version}</code>
+                    <div class="small text-muted mt-1">Build #${buildNumber}</div>
+                </div>`;
             
             html += `<tr>
                 ${selectCell}
                 <td><strong>${result.project}</strong></td>
                 <td><span class="badge bg-secondary">${result.branch}</span></td>
                 <td>${versionCell}</td>
-                <td>${formatStatusCell(result.status, result.isBuilding, result.approvalUrl, result.project, showExecuteButton && currentMode === 'deploy')}</td>
-                <td>${formatDeployCell(devDeploy, 'DEV')}</td>
-                <td>${formatDeployCell(stagingDeploy, 'STG')}</td>
-                <td>${formatDeployCell(productionDeploy, 'PRD')}</td>
+                <td>${formatStatusCell(result.status, result.isBuilding, buildNumber)}</td>
+                <td>${formatLastSuccessfulCell()}</td>
                 <td>
                     <div class="d-flex gap-1">
                         <a href="${buildJobUrl}" target="_blank" class="btn btn-sm btn-outline-primary" title="View Build Pipeline in Jenkins">
                             <i class="bi bi-box-arrow-up-right"></i> Build Link
-                        </a>
-                        <a href="${deployJobUrl}" target="_blank" class="btn btn-sm btn-outline-success" title="View Deploy Pipeline in Jenkins">
-                            <i class="bi bi-box-arrow-up-right"></i> Deploy Link
                         </a>
                     </div>
                 </td>
@@ -1924,9 +1910,6 @@ function stopAutoRefresh() {
 
 // Version Auto-Refresh Functions for Running Builds
 
-// Global variable for version auto-refresh
-let versionAutoRefreshInterval;
-
 // Check if any builds are running and start auto-refresh if needed
 function checkAndStartVersionAutoRefresh(results) {
     const runningBuilds = results.filter(r => r.success && r.isBuilding);
@@ -1971,14 +1954,19 @@ function stopVersionAutoRefresh() {
 
 // Refresh versions for all selected projects to check for running builds
 async function refreshVersionsForRunningBuilds() {
-    if (!selectedProjects || selectedProjects.length === 0) {
+    // Get the list of projects to check - either selected projects or all projects from lastBuildResults
+    let projectsToCheck = selectedProjects && selectedProjects.length > 0 
+        ? selectedProjects 
+        : lastBuildResults.map(r => r.project);
+    
+    if (!projectsToCheck || projectsToCheck.length === 0) {
         stopVersionAutoRefresh();
         return;
     }
     
     try {
         const results = await Promise.all(
-            selectedProjects.map(project => getProjectBuildVersion(project, currentBranch))
+            projectsToCheck.map(project => getProjectBuildVersion(project, currentBranch))
         );
         
         // Update the stored results

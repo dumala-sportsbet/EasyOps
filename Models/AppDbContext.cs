@@ -12,6 +12,8 @@ namespace EasyOps.Models
         public DbSet<Monorepo> Monorepos { get; set; } = null!;
         public DbSet<AwsEnvironment> Environments { get; set; } = null!;
         public DbSet<Cluster> Clusters { get; set; } = null!;
+        public DbSet<ReplayGame> ReplayGames { get; set; } = null!;
+        public DbSet<ReplayGameEvent> ReplayGameEvents { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -29,6 +31,13 @@ namespace EasyOps.Models
                 .WithMany(m => m.Clusters)
                 .HasForeignKey(c => c.MonorepoId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // Configure ReplayGame and ReplayGameEvent relationship
+            modelBuilder.Entity<ReplayGameEvent>()
+                .HasOne(e => e.ReplayGame)
+                .WithMany(g => g.Events)
+                .HasForeignKey(e => e.ReplayGameId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // Seed data will be added via migration or initialization service
         }

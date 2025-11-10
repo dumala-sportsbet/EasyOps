@@ -1,8 +1,37 @@
+﻿using Amazon.ECS.Model;
+using Confluent.Kafka;
 using EasyOps.Models;
 using EasyOps.Services;
+using EasyOps.Services.Kafka;
+using Google.Protobuf;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Serilog;
+using Serilog.Formatting.Compact;
+using Smf.KafkaLib.Producer;
+using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Default";
+var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString();
+
+Log.Logger = new LoggerConfiguration()
+      .ReadFrom.Configuration(builder.Configuration)
+                .Enrich.FromLogContext()
+     .Enrich.WithProperty("Environment", environment)
+   .Enrich.WithProperty("Version", version)
+   .WriteTo.Async(l => l.Console(new CompactJsonFormatter()))
+     .CreateLogger();
+
+builder.Configuration
+    .AddJsonFile("appsettings.json", false, true)
+    .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Default"}.json", true)
+    .AddEnvironmentVariables();
+
+builder.Services
+    .AddOptions()
+    .Configure<ProducerConfig>(builder.Configuration.GetSection("Kafka:Producer"));
 
 // Configure IIS integration
 builder.WebHost.UseIISIntegration();
@@ -10,7 +39,7 @@ builder.WebHost.UseIISIntegration();
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddControllers()
-    .AddJsonOptions(options =>
+  .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
         options.JsonSerializerOptions.WriteIndented = true;
@@ -48,6 +77,27 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Register database services
 builder.Services.AddScoped<IDatabaseService, DatabaseService>();
 
+builder.Services.AddScoped<IIdentityManagementService, IdentityManagementService>();
+builder.Services.AddHttpClient<IIdentityManagementService, IdentityManagementService>(client =>
+{
+    var url = builder.Configuration["IdentityManagementUrl"] ?? "http://localhost:5000";
+    client.BaseAddress = new Uri(url);
+});
+
+
+builder.Services.AddKafkaProducer<string, IMessage>(builder.Configuration, producer =>
+{
+    producer.WithEmptyLeadInProtobufSerializerAndHeaders()
+        .AddTracingHeaderGenerator();
+});
+
+builder.Services.AddSingleton<IPublisherService, PublisherService>();
+builder.Services.AddScoped<IReplayService, ReplayService>();
+
+Console.WriteLine("✅ Kafka producer and replay services registered successfully");
+
+
+// NOW build the app - AFTER all services are registered
 var app = builder.Build();
 
 // Initialize database

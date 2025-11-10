@@ -2,6 +2,19 @@
 
 A cross-platform DevOps tool for managing Jenkins builds and AWS ECS services with simplified authentication and environment switching.
 
+## 🤖 NEW: MCP Server for Natural Language Control
+
+EasyOps now includes an **MCP (Model Context Protocol) server** that lets you control Jenkins builds using natural language through GitHub Copilot, Claude, or any MCP-compatible client!
+
+**Example commands:**
+- "Build AFL pricer"
+- "Check the status of RL orchestrator"  
+- "Deploy AFL pricer version 1.2.3 to dev"
+
+**[📖 See the MCP Server Setup Guide](MCP-SERVER-GUIDE.md)**
+
+---
+
 ## 🚀 Quick Start with Docker
 
 ### Prerequisites
