@@ -421,7 +421,7 @@ namespace EasyOps.Services
                     await _publisherService.PublishMessage(gameScheduled, "afl.gameui.events", _newGameId,
                         correlationId);
 
-                    await Task.Delay(10000); // Ensure the game is created before proceeding
+                    await Task.Delay(5000); // Ensure the game is created before proceeding
 
                     _newRampId = await _identityManagementService.GetRampId(_newGameId);
 
