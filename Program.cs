@@ -133,3 +133,60 @@ app.MapRazorPages()
    .WithStaticAssets();
 
 app.Run();
+// Register Kafka producer and PublisherService with error handling
+// Kafka requires AWS IAM credentials when using AwsSaslSsl security
+bool kafkaRegistered = false;
+try
+{
+    // Check if we're in development and if AWS credentials are available
+    var isDevelopment = builder.Environment.IsDevelopment();
+    var kafkaConfig = builder.Configuration.GetSection("Kafka:Producer");
+    var securityType = kafkaConfig.GetValue<string>("Security:SecurityProviderType");
+
+    if (securityType == "AwsSaslSsl")
+    {
+        Console.WriteLine("⚠️  Kafka is configured with AWS IAM authentication (AwsSaslSsl)");
+        Console.WriteLine("   Checking AWS credentials availability...");
+
+        // Try to get AWS credentials from environment or profile
+        var hasAwsCredentials = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID")) ||
+                               !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AWS_PROFILE")) ||
+                               System.IO.File.Exists(Path.Combine(
+                                   Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                                   ".aws", "credentials"));
+
+        if (!hasAwsCredentials && isDevelopment)
+        {
+            Console.WriteLine("⚠️  No AWS credentials found. Kafka functionality will be disabled.");
+            Console.WriteLine("   To enable Kafka:");
+            Console.WriteLine("   1. Set AWS_PROFILE environment variable (e.g., set AWS_PROFILE=dev)");
+            Console.WriteLine("   2. Or run: aws configure --profile dev");
+            Console.WriteLine("   3. Or use AWS SSO: aws sso login --profile dev");
+            throw new InvalidOperationException("AWS credentials not available for Kafka IAM authentication");
+        }
+    }
+
+    // Attempt to register Kafka producer
+    builder.Services.AddKafkaProducer<string, IMessage>(builder.Configuration, producer =>
+    {
+        producer.WithEmptyLeadInProtobufSerializerAndHeaders()
+            .AddTracingHeaderGenerator();
+    });
+
+    builder.Services.AddSingleton<IPublisherService, PublisherService>();
+    kafkaRegistered = true;
+
+    Console.WriteLine("✅ Kafka producer and PublisherService registered successfully");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"⚠️  Failed to register Kafka producer: {ex.Message}");
+    Console.WriteLine("   Replay execution functionality will not be available");
+    Console.WriteLine("   The application will continue running with limited functionality");
+}
+
+// Always register ReplayService (even without Kafka, GET operations will work)
+builder.Services.AddScoped<IReplayService, ReplayService>();
+Console.WriteLine(kafkaRegistered
+    ? "✅ ReplayService registered with full Kafka support"
+    : "⚠️  ReplayService registered without Kafka (execution disabled)");

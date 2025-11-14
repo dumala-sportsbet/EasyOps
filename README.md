@@ -43,6 +43,23 @@ EasyOps now includes an **MCP (Model Context Protocol) server** that lets you co
 
 ### 🍎 Mac Setup
 
+**For native development (without Docker):**
+1. **Clone the project**
+2. **Configure NuGet packages** (required for private packages):
+   ```bash
+   cd /path/to/EasyOps
+   chmod +x setup-nuget-mac.sh
+   ./setup-nuget-mac.sh
+   ```
+   See [MAC-QUICKSTART.md](MAC-QUICKSTART.md) for detailed instructions.
+
+3. **Build and run**:
+   ```bash
+   dotnet build
+   dotnet run
+   ```
+
+**For Docker:**
 1. **Clone or download the project**
 2. **Ensure you have AWS profiles configured**:
    ```bash
